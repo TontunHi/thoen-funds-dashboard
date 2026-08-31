@@ -179,15 +179,15 @@ export default function SheetViewer() {
           <div className="w-full bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden transition-all">
             {/* Sheet Subheader Info */}
             <div className="px-4 py-3 bg-slate-50/80 border-b border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-600 gap-2">
-              <div className="flex items-center gap-3">
-                <span className="flex items-center gap-1">
-                  <Table className="w-3.5 h-3.5 text-slate-400" />
-                  <span>จำนวนแถว: <strong>{sheetData.rowCount}</strong> แถว</span>
+              <div className="flex items-center flex-wrap gap-3">
+                <span className="flex items-center gap-1 font-medium text-slate-700">
+                  <Table className="w-3.5 h-3.5 text-blue-600" />
+                  <span>ช่วงข้อมูล: <strong>คอลัมน์ A - Q</strong> ({sheetData.columnCount} คอลัมน์)</span>
                 </span>
                 <span>•</span>
-                <span className="flex items-center gap-1">
-                  <Layers className="w-3.5 h-3.5 text-slate-400" />
-                  <span>จำนวนคอลัมน์: <strong>{sheetData.columnCount}</strong> คอลัมน์</span>
+                <span className="flex items-center gap-1 font-medium text-slate-700">
+                  <Layers className="w-3.5 h-3.5 text-blue-600" />
+                  <span>จำนวนแถวที่แสดง: <strong>{sheetData.rowCount}</strong> แถว</span>
                 </span>
               </div>
               <div className="text-slate-500 italic">

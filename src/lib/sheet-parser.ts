@@ -1,4 +1,5 @@
 import { CellStyle, ParsedCell, ParsedRow, ParsedSheetData } from "@/types/sheet";
+import { MAX_ROWS, MAX_COLS } from "@/config/sheet.config";
 export { getDemoSheetData } from "@/fixtures/demo-sheet";
 
 interface GoogleColor {
@@ -71,26 +72,29 @@ function colorToRgbString(color?: GoogleColor): string | undefined {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-export function parseGoogleSheetGrid(sheetObj: GoogleSheetPayload): ParsedSheetData {
+export function parseGoogleSheetGrid(
+  sheetObj: GoogleSheetPayload,
+  rowLimit: number = MAX_ROWS,
+  colLimit: number = MAX_COLS
+): ParsedSheetData {
   const sheetProperties = sheetObj.properties || {};
   const title = sheetProperties.title || "Sheet";
   const sheetId = sheetProperties.sheetId || 0;
-  const gridProperties = sheetProperties.gridProperties || {};
-  const maxRows = gridProperties.rowCount || 100;
 
   const data = sheetObj.data?.[0] || {};
   const rowData = data.rowData || [];
   const merges = sheetObj.merges || [];
 
-  // Determine actual bounds with data
-  const actualRowCount = Math.min(maxRows, Math.max(rowData.length, 1));
+  // Determine actual bounds with data, respecting requested limits (A-Q = 17 cols, 180 rows)
+  const actualRowCount = Math.min(rowLimit, Math.max(rowData.length, 1));
   let maxColSeen = 0;
-  rowData.forEach((r) => {
-    if (r.values && r.values.length > maxColSeen) {
-      maxColSeen = r.values.length;
+  for (let r = 0; r < actualRowCount; r++) {
+    const rowValues = rowData[r]?.values || [];
+    if (rowValues.length > maxColSeen) {
+      maxColSeen = rowValues.length;
     }
-  });
-  const actualColCount = Math.max(maxColSeen, 1);
+  }
+  const actualColCount = Math.min(colLimit, Math.max(maxColSeen, colLimit));
 
   // Initialize matrix of cells
   const matrix: ParsedCell[][] = [];
@@ -133,21 +137,30 @@ export function parseGoogleSheetGrid(sheetObj: GoogleSheetPayload): ParsedSheetD
     matrix.push(rowCells);
   }
 
-  // Apply merge ranges
+  // Apply merge ranges clamped to visible matrix boundaries
   for (const merge of merges) {
     const startRow = merge.startRowIndex ?? 0;
-    const endRow = merge.endRowIndex ?? startRow + 1;
+    const rawEndRow = merge.endRowIndex ?? startRow + 1;
     const startCol = merge.startColumnIndex ?? 0;
-    const endCol = merge.endColumnIndex ?? startCol + 1;
+    const rawEndCol = merge.endColumnIndex ?? startCol + 1;
 
-    const rowSpan = endRow - startRow;
-    const colSpan = endCol - startCol;
+    // If merge start point is outside the rendered matrix, skip
+    if (startRow >= actualRowCount || startCol >= actualColCount) {
+      continue;
+    }
+
+    // Clamp end coordinates to rendered matrix bounds
+    const endRow = Math.min(rawEndRow, actualRowCount);
+    const endCol = Math.min(rawEndCol, actualColCount);
+
+    const rowSpan = Math.max(1, endRow - startRow);
+    const colSpan = Math.max(1, endCol - startCol);
 
     if (matrix[startRow] && matrix[startRow][startCol]) {
       matrix[startRow][startCol].rowSpan = rowSpan;
       matrix[startRow][startCol].colSpan = colSpan;
 
-      // Mark covered cells
+      // Mark covered cells within matrix range
       for (let r = startRow; r < endRow; r++) {
         for (let c = startCol; c < endCol; c++) {
           if (r === startRow && c === startCol) continue;

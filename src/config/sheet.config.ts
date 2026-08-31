@@ -11,11 +11,17 @@ export const API_KEY = process.env.GOOGLE_SHEETS_API_KEY || "AIzaSyBcoulWFtqkM_D
 export const AUTO_REFRESH_SECONDS = 60;
 export const APP_TITLE = "ระบบรายงานข้อมูลกองทุนเถิน (Thoen Funds Dashboard)";
 
+// Bounding limits as requested: Columns A-Q (17 columns) and up to 180 rows
+export const MAX_ROWS = 180;
+export const MAX_COLS = 17; // A to Q
+
 export const SHEET_CONFIG = {
   SPREADSHEET_ID,
   SHEET_GID,
   API_KEY,
   AUTO_REFRESH_SECONDS,
   APP_TITLE,
+  MAX_ROWS,
+  MAX_COLS,
 };
 
