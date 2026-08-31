@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ระบบรายงานข้อมูลกองทุนเถิน (Thoen Funds Dashboard)
 
-## Getting Started
+เว็บแอปพลิเคชันสำหรับแสดงผลข้อมูลจาก Google Sheet (`gid=806124582`) แบบเรียลไทม์ ด้วย Next.js 14, React และ Tailwind CSS พัฒนาขึ้นเพื่อ Deploy บน Vercel โดยเฉพาะ
 
-First, run the development server:
+## ✨ คุณสมบัติเด่น (Features)
 
+- 📊 **ความถูกต้อง 100% (High Fidelity)**: รองรับการแสดงผลตารางพร้อมโครงสร้าง Merge Cell (Rowspan & Colspan), สีพื้นหลัง, สีตัวอักษร, ขนาดฟอนต์ และการจัดตำแหน่งข้อความตรงตาม Google Sheet ต้นฉบับ
+- ☀️ **Light Mode ดีไซน์สะอาดตา**: สบายตา อ่านง่าย สไตล์ Modern Dashboard
+- 🖱️ **Full Screen Single-Scroll**: แสดงผลเต็มหน้าจอโดยไม่ต้องเลื่อนซ้าย-ขวา (No Horizontal Scrollbar) และเลื่อนลูกกลิ้งเมาส์ (Mouse Wheel) ดูข้อมูลได้โดยตรงทันทีโดยไม่มีกล่อง Layer ซ้อนกวนใจ
+- 🔄 **Auto-Refresh & Manual Sync**: อัปเดตข้อมูลอัตโนมัติทุก 60 วินาที พร้อมปุ่มกดรีเฟรชข้อมูลแบบทันที
+- ⚙️ **Config ง่าย**: รองรับทั้งการใส่ Google Sheets API Key ลงในไฟล์ `src/config/sheet.config.ts` โดยตรง หรือตั้งค่าผ่าน Environment Variable `GOOGLE_SHEETS_API_KEY`
+
+---
+
+## 🚀 วิธีการติดตั้งและรันในเครื่อง (Local Setup)
+
+### 1. ติดตั้ง Dependencies
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. ตั้งค่า Google Sheets API Key (เลือกวิธีใดวิธีหนึ่ง)
+- **วิธีที่ 1 (สะดวกที่สุด)**: เปิดไฟล์ `src/config/sheet.config.ts` และระบุคีย์ของคุณในช่อง `API_KEY`:
+  ```ts
+  export const SHEET_CONFIG = {
+    SPREADSHEET_ID: "1tEBhzMWF7QkwOEBXamCImWrbcOqthdb2Kb9Wgs6k04I",
+    SHEET_GID: 806124582,
+    API_KEY: "AIzaSy...", // <-- ใส่ Google Sheets API Key ที่นี่
+    AUTO_REFRESH_SECONDS: 60,
+    ...
+  };
+  ```
+- **วิธีที่ 2 (ผ่าน .env.local)**: สร้างไฟล์ `.env.local` ที่ Root directory:
+  ```env
+  GOOGLE_SHEETS_API_KEY=AIzaSy...
+  ```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. รัน Development Server
+```bash
+npm run dev
+```
+เปิดบราวเซอร์ไปที่ [http://localhost:3000](http://localhost:3000)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## 🌐 การ Deploy ขึ้น Vercel
 
-To learn more about Next.js, take a look at the following resources:
+1. Push โค้ดทั้งหมดขึ้น GitHub / GitLab / Bitbucket
+2. เข้าสู่ [Vercel](https://vercel.com) แล้วเลือก **Add New Project** -> Import repository นี้
+3. (ทางเลือก) ในส่วน **Environment Variables** บน Vercel Dashboard ให้เพิ่ม:
+   - Key: `GOOGLE_SHEETS_API_KEY`
+   - Value: `(API Key ของคุณ)`
+4. กด **Deploy** แล้วระบบจะ Build และออนไลน์ให้ทันที
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🧪 การทดสอบ Build
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run build
+```
+โครงการผ่านการตรวจสอบ Type Check และ Next.js Production Build 100% เรียบร้อยแล้ว
