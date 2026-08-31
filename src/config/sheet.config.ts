@@ -7,7 +7,7 @@
 
 export const SPREADSHEET_ID = "1tEBhzMWF7QkwOEBXamCImWrbcOqthdb2Kb9Wgs6k04I";
 export const SHEET_GID = 806124582;
-export const API_KEY = process.env.GOOGLE_SHEETS_API_KEY || "";
+export const API_KEY = process.env.GOOGLE_SHEETS_API_KEY || "AIzaSyBcoulWFtqkM_D2ys03qQKyWkazHEn0pjs";
 export const AUTO_REFRESH_SECONDS = 60;
 export const APP_TITLE = "ระบบรายงานข้อมูลกองทุนเถิน (Thoen Funds Dashboard)";
 
