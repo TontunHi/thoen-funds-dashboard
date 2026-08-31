@@ -15,6 +15,9 @@ export const APP_TITLE = "ระบบรายงานข้อมูลกอ
 export const MAX_ROWS = 180;
 export const MAX_COLS = 17; // A to Q
 
+// Exclude columns (0-indexed: B is 1, C is 2)
+export const EXCLUDE_COLS = [1, 2];
+
 export const SHEET_CONFIG = {
   SPREADSHEET_ID,
   SHEET_GID,
@@ -23,5 +26,6 @@ export const SHEET_CONFIG = {
   APP_TITLE,
   MAX_ROWS,
   MAX_COLS,
+  EXCLUDE_COLS,
 };
 

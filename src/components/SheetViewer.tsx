@@ -182,7 +182,7 @@ export default function SheetViewer() {
               <div className="flex items-center flex-wrap gap-3">
                 <span className="flex items-center gap-1 font-medium text-slate-700">
                   <Table className="w-3.5 h-3.5 text-blue-600" />
-                  <span>ช่วงข้อมูล: <strong>คอลัมน์ A - Q</strong> ({sheetData.columnCount} คอลัมน์)</span>
+                  <span>ช่วงข้อมูล: <strong>คอลัมน์ A, D - Q</strong> (เว้น B, C) รวม {sheetData.columnCount} คอลัมน์</span>
                 </span>
                 <span>•</span>
                 <span className="flex items-center gap-1 font-medium text-slate-700">

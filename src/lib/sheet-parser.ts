@@ -1,5 +1,5 @@
 import { CellStyle, ParsedCell, ParsedRow, ParsedSheetData } from "@/types/sheet";
-import { MAX_ROWS, MAX_COLS } from "@/config/sheet.config";
+import { MAX_ROWS, MAX_COLS, EXCLUDE_COLS } from "@/config/sheet.config";
 export { getDemoSheetData } from "@/fixtures/demo-sheet";
 
 interface GoogleColor {
@@ -75,7 +75,8 @@ function colorToRgbString(color?: GoogleColor): string | undefined {
 export function parseGoogleSheetGrid(
   sheetObj: GoogleSheetPayload,
   rowLimit: number = MAX_ROWS,
-  colLimit: number = MAX_COLS
+  colLimit: number = MAX_COLS,
+  excludeCols: number[] = EXCLUDE_COLS
 ): ParsedSheetData {
   const sheetProperties = sheetObj.properties || {};
   const title = sheetProperties.title || "Sheet";
@@ -85,24 +86,28 @@ export function parseGoogleSheetGrid(
   const rowData = data.rowData || [];
   const merges = sheetObj.merges || [];
 
-  // Determine actual bounds with data, respecting requested limits (A-Q = 17 cols, 180 rows)
+  // Determine actual row count up to limit
   const actualRowCount = Math.min(rowLimit, Math.max(rowData.length, 1));
-  let maxColSeen = 0;
-  for (let r = 0; r < actualRowCount; r++) {
-    const rowValues = rowData[r]?.values || [];
-    if (rowValues.length > maxColSeen) {
-      maxColSeen = rowValues.length;
-    }
-  }
-  const actualColCount = Math.min(colLimit, Math.max(maxColSeen, colLimit));
+
+  // Determine kept original columns (A-Q excluding B & C)
+  const originalColIndices = Array.from({ length: colLimit }, (_, i) => i);
+  const keptOriginalCols = originalColIndices.filter((c) => !excludeCols.includes(c));
+  const totalNewCols = keptOriginalCols.length;
+
+  const oldToNewColMap: Record<number, number> = {};
+  keptOriginalCols.forEach((oldIdx, newIdx) => {
+    oldToNewColMap[oldIdx] = newIdx;
+  });
 
   // Initialize matrix of cells
   const matrix: ParsedCell[][] = [];
   for (let r = 0; r < actualRowCount; r++) {
     const rowCells: ParsedCell[] = [];
     const rowValues = rowData[r]?.values || [];
-    for (let c = 0; c < actualColCount; c++) {
-      const cellData = rowValues[c];
+
+    for (let newC = 0; newC < totalNewCols; newC++) {
+      const oldC = keptOriginalCols[newC];
+      const cellData = rowValues[oldC];
       const effectiveFormat = cellData?.effectiveFormat || {};
       const userEnteredFormat = cellData?.userEnteredFormat || {};
       const textFormat = effectiveFormat.textFormat || userEnteredFormat.textFormat || {};
@@ -125,7 +130,7 @@ export function parseGoogleSheetGrid(
 
       rowCells.push({
         rowIndex: r,
-        colIndex: c,
+        colIndex: newC,
         formattedValue: formattedVal,
         rawValue: cellData?.effectiveValue,
         rowSpan: 1,
@@ -137,35 +142,42 @@ export function parseGoogleSheetGrid(
     matrix.push(rowCells);
   }
 
-  // Apply merge ranges clamped to visible matrix boundaries
+  // Apply merge ranges with column exclusion adjustments
   for (const merge of merges) {
     const startRow = merge.startRowIndex ?? 0;
     const rawEndRow = merge.endRowIndex ?? startRow + 1;
-    const startCol = merge.startColumnIndex ?? 0;
-    const rawEndCol = merge.endColumnIndex ?? startCol + 1;
+    const mergeStartCol = merge.startColumnIndex ?? 0;
+    const mergeEndCol = merge.endColumnIndex ?? mergeStartCol + 1;
 
-    // If merge start point is outside the rendered matrix, skip
-    if (startRow >= actualRowCount || startCol >= actualColCount) {
+    // If merge row is outside visible rows, skip
+    if (startRow >= actualRowCount) {
       continue;
     }
 
-    // Clamp end coordinates to rendered matrix bounds
     const endRow = Math.min(rawEndRow, actualRowCount);
-    const endCol = Math.min(rawEndCol, actualColCount);
-
     const rowSpan = Math.max(1, endRow - startRow);
-    const colSpan = Math.max(1, endCol - startCol);
 
-    if (matrix[startRow] && matrix[startRow][startCol]) {
-      matrix[startRow][startCol].rowSpan = rowSpan;
-      matrix[startRow][startCol].colSpan = colSpan;
+    // Find kept columns falling within this merge range
+    const colsInRange = keptOriginalCols.filter((c) => c >= mergeStartCol && c < mergeEndCol);
+    if (colsInRange.length === 0) {
+      continue; // All merged columns are excluded
+    }
 
-      // Mark covered cells within matrix range
+    const firstKeptOldCol = colsInRange[0];
+    const newAnchorCol = oldToNewColMap[firstKeptOldCol];
+    const colSpan = colsInRange.length;
+
+    if (matrix[startRow] && matrix[startRow][newAnchorCol]) {
+      matrix[startRow][newAnchorCol].rowSpan = rowSpan;
+      matrix[startRow][newAnchorCol].colSpan = colSpan;
+
+      // Mark other kept cells in this rectangle as covered
       for (let r = startRow; r < endRow; r++) {
-        for (let c = startCol; c < endCol; c++) {
-          if (r === startRow && c === startCol) continue;
-          if (matrix[r] && matrix[r][c]) {
-            matrix[r][c].isCovered = true;
+        for (const oldCol of colsInRange) {
+          if (r === startRow && oldCol === firstKeptOldCol) continue;
+          const newC = oldToNewColMap[oldCol];
+          if (matrix[r] && matrix[r][newC]) {
+            matrix[r][newC].isCovered = true;
           }
         }
       }
@@ -181,7 +193,7 @@ export function parseGoogleSheetGrid(
     title,
     sheetId,
     rowCount: actualRowCount,
-    columnCount: actualColCount,
+    columnCount: totalNewCols,
     rows: parsedRows,
     lastUpdated: new Date().toISOString(),
   };
