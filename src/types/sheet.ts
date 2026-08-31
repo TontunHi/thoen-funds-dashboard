@@ -18,7 +18,7 @@ export interface ParsedCell {
   rowIndex: number;
   colIndex: number;
   formattedValue: string;
-  rawValue?: any;
+  rawValue?: string | number | boolean | null | Record<string, unknown>;
   rowSpan: number;
   colSpan: number;
   isCovered: boolean; // True if this cell is obscured by a merge from another cell

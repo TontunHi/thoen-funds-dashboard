@@ -46,22 +46,21 @@ export async function GET() {
         data: getDemoSheetData(),
         isFallback: true,
         error: `ไม่สามารถดึงข้อมูลจาก Google Sheets ได้ (${res.status}): ${parsedErr}`,
-      }, { status: 200 }); // Return 200 with fallback so UI can show friendly error banner + demo
+      }, { status: res.status >= 400 && res.status < 600 ? res.status : 500 });
     }
 
     const data = await res.json();
     const sheets = data.sheets || [];
 
     // Find worksheet matching sheetGid
-    let targetSheet = sheets.find((s: any) => s.properties?.sheetId === sheetGid);
-    if (!targetSheet && sheets.length > 0) {
-      targetSheet = sheets[0];
-    }
+    const targetSheet = sheets.find((s: any) => s.properties?.sheetId === sheetGid);
 
     if (!targetSheet) {
       return NextResponse.json<SheetApiResponse>({
         success: false,
-        error: `ไม่พบข้อมูลชีต (GID: ${sheetGid}) ในสเปรดชีตนี้`,
+        data: getDemoSheetData(),
+        isFallback: true,
+        error: `ไม่พบข้อมูลชีต GID: ${sheetGid} ในสเปรดชีตนี้ (มีชีต ID: ${sheets.map((s: any) => s.properties?.sheetId).join(", ")})`,
       }, { status: 404 });
     }
 

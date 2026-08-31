@@ -235,8 +235,6 @@ function RenderTableCell({ cell }: { cell: ParsedCell }) {
   if (style.verticalAlignment === "TOP") vAlignClass = "align-top";
   else if (style.verticalAlignment === "BOTTOM") vAlignClass = "align-bottom";
 
-  const isHeaderRow = cell.rowIndex === 0 || cell.rowIndex === 1;
-
   // Custom inline style overrides from Sheet
   const customStyles: React.CSSProperties = {};
   if (style.backgroundColor) {
@@ -249,18 +247,16 @@ function RenderTableCell({ cell }: { cell: ParsedCell }) {
     customStyles.fontSize = `${Math.max(12, style.fontSize)}px`;
   }
 
-  const Tag = isHeaderRow ? "th" : "td";
-
   return (
-    <Tag
+    <td
       rowSpan={rowSpan > 1 ? rowSpan : undefined}
       colSpan={colSpan > 1 ? colSpan : undefined}
       style={customStyles}
       className={`sheet-cell px-3.5 py-2.5 border border-slate-300 ${alignClass} ${vAlignClass} ${
         style.bold ? "font-bold" : "font-normal"
       } ${style.italic ? "italic" : ""} ${
-        isHeaderRow && !style.backgroundColor ? "bg-slate-100/90 text-slate-900 font-semibold" : ""
-      } transition-colors`}
+        style.underline ? "underline" : ""
+      } ${style.strikethrough ? "line-through" : ""} transition-colors`}
     >
       <div className="leading-snug">
         {formattedValue ? (
@@ -269,6 +265,6 @@ function RenderTableCell({ cell }: { cell: ParsedCell }) {
           <span className="inline-block min-h-[1.25rem] text-transparent select-none">-</span>
         )}
       </div>
-    </Tag>
+    </td>
   );
 }
