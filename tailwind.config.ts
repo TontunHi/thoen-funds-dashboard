@@ -8,12 +8,24 @@ const config: Config = {
   ],
   theme: {
     extend: {
-      colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
-      },
       fontFamily: {
-        sans: ["Inter", "Prompt", "sans-serif"],
+        prompt: ["var(--font-prompt)", "sans-serif"],
+        sans: ["var(--font-prompt)", "var(--font-inter)", "sans-serif"],
+        mono: ["var(--font-inter)", "Consolas", "monospace"],
+      },
+      colors: {
+        brand: {
+          50: "#eef2ff",
+          100: "#e0e7ff",
+          200: "#c7d2fe",
+          300: "#a5b4fc",
+          400: "#818cf8",
+          500: "#6366f1",
+          600: "#4f46e5",
+          700: "#4338ca",
+          800: "#3730a3",
+          900: "#312e81",
+        },
       },
     },
   },

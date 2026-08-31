@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import { ParsedSheetData, SheetApiResponse, ParsedCell } from "@/types/sheet";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { ParsedSheetData, SheetApiResponse, ParsedCell, ParsedRow } from "@/types/sheet";
 import { SHEET_CONFIG } from "@/config/sheet.config";
 import {
   RefreshCw,
@@ -13,6 +13,10 @@ import {
   Layers,
   FileSpreadsheet,
   Info,
+  Search,
+  SlidersHorizontal,
+  Sparkles,
+  TrendingUp,
 } from "lucide-react";
 
 export default function SheetViewer() {
@@ -23,6 +27,7 @@ export default function SheetViewer() {
   const [isFallback, setIsFallback] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [secondsUntilRefresh, setSecondsUntilRefresh] = useState<number>(SHEET_CONFIG.AUTO_REFRESH_SECONDS);
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   const fetchData = useCallback(async (manual = false) => {
     if (manual) {
@@ -70,92 +75,131 @@ export default function SheetViewer() {
     return () => clearInterval(timer);
   }, [fetchData]);
 
+  // Filter rows based on search query (preserving header rows 0-1)
+  const filteredRows = useMemo(() => {
+    if (!sheetData) return [];
+    if (!searchQuery.trim()) return sheetData.rows;
+
+    const q = searchQuery.toLowerCase().trim();
+    return sheetData.rows.filter((row, idx) => {
+      // Always keep first 2 header rows
+      if (idx === 0 || idx === 1) return true;
+      return row.cells.some((c) =>
+        c.formattedValue && c.formattedValue.toLowerCase().includes(q)
+      );
+    });
+  }, [sheetData, searchQuery]);
+
   const googleSheetUrl = `https://docs.google.com/spreadsheets/d/${SHEET_CONFIG.SPREADSHEET_ID}/edit#gid=${SHEET_CONFIG.SHEET_GID}`;
 
   return (
-    <div className="w-full min-h-screen bg-slate-50 text-slate-800 pb-16">
-      {/* Top Header Bar */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm transition-all">
+    <div className="w-full min-h-screen bg-[#f8fafc] text-slate-800 pb-20 selection:bg-indigo-100 selection:text-indigo-900 font-prompt">
+      {/* Top Header Navbar */}
+      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200/80 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)] transition-all">
         <div className="w-full px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
-          {/* Logo & Title */}
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-200/60 shadow-sm">
-              <FileSpreadsheet className="w-6 h-6" />
+          {/* Logo & System Title */}
+          <div className="flex items-center space-x-3.5">
+            <div className="relative p-2.5 bg-gradient-to-br from-indigo-500 to-blue-600 text-white rounded-xl shadow-sm ring-1 ring-indigo-500/20">
+              <FileSpreadsheet className="w-5 h-5" />
+              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900">
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-base sm:text-lg font-bold tracking-tight text-slate-900">
                   {sheetData?.title || SHEET_CONFIG.APP_TITLE}
                 </h1>
                 {isFallback ? (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                    <AlertTriangle className="w-3 h-3" />
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 shadow-xs">
+                    <AlertTriangle className="w-3 h-3 text-amber-600" />
                     Demo Mode
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    <CheckCircle2 className="w-3 h-3" />
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                     Live Synced
                   </span>
                 )}
               </div>
               <p className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
-                <span>สเปรดชีต GID: <strong className="font-mono">{SHEET_CONFIG.SHEET_GID}</strong></span>
+                <span>สเปรดชีต GID: <strong className="font-mono text-slate-700">{SHEET_CONFIG.SHEET_GID}</strong></span>
                 <span>•</span>
-                <span>รีเฟรชอัตโนมัติใน {secondsUntilRefresh} วิ</span>
+                <span>อัปเดตอัตโนมัติใน <strong className="font-mono text-indigo-600">{secondsUntilRefresh}</strong>s</span>
               </p>
             </div>
           </div>
 
-          {/* Action buttons & Stats */}
-          <div className="flex items-center flex-wrap gap-2 sm:gap-3">
+          {/* Search Box & Actions */}
+          <div className="flex items-center flex-wrap gap-2.5 sm:gap-3">
+            {/* Quick Search */}
+            <div className="relative w-48 sm:w-64">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="ค้นหาข้อมูลในตาราง..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3.5 py-1.5 text-xs sm:text-sm bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-400 rounded-lg shadow-2xs outline-hidden transition placeholder:text-slate-400"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
             {lastSyncTime && (
-              <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-500 bg-slate-100/80 px-3 py-1.5 rounded-lg border border-slate-200/60">
+              <div className="hidden md:flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200/80 shadow-2xs">
                 <Clock className="w-3.5 h-3.5 text-slate-400" />
-                <span>อัปเดตล่าสุด: {lastSyncTime.toLocaleTimeString("th-TH")}</span>
+                <span>ล่าสุด: <strong className="text-slate-700 font-mono">{lastSyncTime.toLocaleTimeString("th-TH")}</strong></span>
               </div>
             )}
 
             <button
               onClick={() => fetchData(true)}
               disabled={isLoading || isRefreshing}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 active:bg-slate-100 border border-slate-300 rounded-lg shadow-sm hover:shadow transition disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 active:bg-slate-100 border border-slate-300 rounded-lg shadow-2xs hover:shadow-xs transition disabled:opacity-50"
               title="รีเฟรชข้อมูลตอนนี้"
             >
-              <RefreshCw className={`w-3.5 h-3.5 text-slate-600 ${isRefreshing ? "animate-spin text-blue-600" : ""}`} />
-              <span>{isRefreshing ? "กำลังโหลด..." : "รีเฟรชข้อมูล"}</span>
+              <RefreshCw className={`w-3.5 h-3.5 text-slate-600 ${isRefreshing ? "animate-spin text-indigo-600" : ""}`} />
+              <span>{isRefreshing ? "กำลังโหลด..." : "รีเฟรช"}</span>
             </button>
 
             <a
               href={googleSheetUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs sm:text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs sm:text-sm font-medium text-indigo-700 bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200/70 rounded-lg transition shadow-2xs"
             >
-              <span>เปิด Google Sheet</span>
-              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Google Sheet</span>
+              <ExternalLink className="w-3.5 h-3.5 text-indigo-500" />
             </a>
           </div>
         </div>
       </header>
 
-      {/* Main Content Area */}
+      {/* Main Table Container */}
       <main className="w-full px-2 sm:px-4 lg:px-6 pt-4">
         {/* Banner Alert if Fallback or Error */}
         {errorMsg && (
-          <div className={`mb-4 p-4 rounded-xl border flex items-start gap-3 text-sm shadow-sm transition-all ${
+          <div className={`mb-4 p-4 rounded-xl border flex items-start gap-3 text-sm shadow-xs transition-all ${
             isFallback
               ? "bg-amber-50/90 border-amber-200 text-amber-900"
               : "bg-red-50/90 border-red-200 text-red-900"
           }`}>
-            <Info className="w-5 h-5 flex-shrink-0 text-amber-600 mt-0.5" />
+            <Info className="w-5 h-5 shrink-0 text-amber-600 mt-0.5" />
             <div className="flex-1">
               <p className="font-semibold">{isFallback ? "แจ้งเตือนการตั้งค่า API Key" : "เกิดข้อผิดพลาด"}</p>
               <p className="mt-0.5 text-xs sm:text-sm text-slate-700">{errorMsg}</p>
               {isFallback && (
-                <div className="mt-2 text-xs bg-white/80 p-2.5 rounded-lg border border-amber-200/70 font-mono text-slate-700 space-y-1">
-                  <p className="font-sans font-medium text-slate-900">วิธีเชื่อมต่อ Google Sheet จริงของคุณ:</p>
-                  <p>1. เปิดไฟล์ <code className="bg-slate-100 px-1 py-0.5 rounded text-blue-700">src/config/sheet.config.ts</code> แล้วใส่ API Key ในช่อง <code className="text-amber-800">API_KEY</code></p>
+                <div className="mt-2 text-xs bg-white/90 p-3 rounded-lg border border-amber-200/70 font-mono text-slate-700 space-y-1">
+                  <p className="font-prompt font-medium text-slate-900">วิธีเชื่อมต่อ Google Sheet จริงของคุณ:</p>
+                  <p>1. เปิดไฟล์ <code className="bg-slate-100 px-1.5 py-0.5 rounded text-indigo-700">src/config/sheet.config.ts</code> แล้วใส่ API Key ในช่อง <code className="text-amber-800">API_KEY</code></p>
                   <p>2. หรือตั้งค่า Environment Variable: <code className="text-amber-800">GOOGLE_SHEETS_API_KEY=your_key_here</code></p>
                 </div>
               )}
@@ -165,53 +209,78 @@ export default function SheetViewer() {
 
         {/* Loading Skeleton */}
         {isLoading && !sheetData && (
-          <div className="w-full bg-white rounded-xl border border-slate-200 p-8 shadow-sm text-center">
-            <div className="inline-flex p-3 bg-blue-50 text-blue-600 rounded-2xl animate-pulse mb-4">
+          <div className="w-full bg-white rounded-2xl border border-slate-200/80 p-12 shadow-sm text-center">
+            <div className="inline-flex p-4 bg-indigo-50 text-indigo-600 rounded-3xl animate-pulse mb-4 ring-1 ring-indigo-500/10">
               <RefreshCw className="w-8 h-8 animate-spin" />
             </div>
             <h3 className="text-base font-semibold text-slate-800">กำลังเชื่อมต่อและโหลดข้อมูลจาก Google Sheet...</h3>
-            <p className="text-xs text-slate-500 mt-1">โปรดรอสักครู่ ระบบกำลังประมวลผลโครงสร้างตารางและ Merge Cell</p>
+            <p className="text-xs text-slate-500 mt-1.5">ประมวลผลโครงสร้างตารางและ Merge Cell ทั้งหมดให้อัตโนมัติ</p>
           </div>
         )}
 
-        {/* Data Table */}
+        {/* Beautiful Executive Data Table Card */}
         {sheetData && (
-          <div className="w-full bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden transition-all">
-            {/* Sheet Subheader Info */}
-            <div className="px-4 py-3 bg-slate-50/80 border-b border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-600 gap-2">
+          <div className="w-full bg-white rounded-2xl border border-slate-200/90 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] overflow-hidden transition-all">
+            {/* Sheet Subheader Status Bar */}
+            <div className="px-5 py-3.5 bg-gradient-to-r from-slate-50 via-indigo-50/30 to-slate-50 border-b border-slate-200/80 flex flex-wrap items-center justify-between text-xs text-slate-600 gap-3">
               <div className="flex items-center flex-wrap gap-3">
-                <span className="flex items-center gap-1 font-medium text-slate-700">
-                  <Table className="w-3.5 h-3.5 text-blue-600" />
-                  <span>ช่วงข้อมูล: <strong>คอลัมน์ A, D - Q</strong> (เว้น B, C) รวม {sheetData.columnCount} คอลัมน์</span>
+                <span className="inline-flex items-center gap-1.5 font-medium text-slate-700 bg-white px-2.5 py-1 rounded-md border border-slate-200 shadow-2xs">
+                  <Table className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>คอลัมน์: <strong className="font-semibold text-slate-900">A, D - Q</strong> ({sheetData.columnCount} คอลัมน์)</span>
                 </span>
-                <span>•</span>
-                <span className="flex items-center gap-1 font-medium text-slate-700">
-                  <Layers className="w-3.5 h-3.5 text-blue-600" />
-                  <span>จำนวนแถวที่แสดง: <strong>{sheetData.rowCount}</strong> แถว</span>
+                <span className="inline-flex items-center gap-1.5 font-medium text-slate-700 bg-white px-2.5 py-1 rounded-md border border-slate-200 shadow-2xs">
+                  <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>จำนวนแถว: <strong className="font-semibold text-slate-900">{filteredRows.length}</strong> แถว {searchQuery ? `(กรองจาก ${sheetData.rowCount})` : ""}</span>
                 </span>
               </div>
-              <div className="text-slate-500 italic">
-                * เลื่อนลูกกลิ้งเมาส์ (Mouse Wheel) ขึ้น-ลงเพื่อดูข้อมูลได้ทั้งหน้าจอโดยไม่มีแถบเลื่อนซ้อน
+              <div className="text-slate-500 text-[11px] flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                <span>เลื่อนลูกกลิ้งเมาส์ (Mouse Wheel) ขึ้น-ลงเพื่อดูข้อมูลได้อย่างราบรื่นทั้งหน้าจอ</span>
               </div>
             </div>
 
-            {/* Table Matrix Container - Full Width Direct Table */}
-            <div className="w-full">
-              <table className="w-full table-auto border-collapse border-spacing-0 text-sm">
+            {/* Table Matrix Container */}
+            <div className="w-full overflow-visible">
+              <table className="w-full table-auto border-collapse text-xs sm:text-sm">
                 <tbody>
-                  {sheetData.rows.map((row) => (
-                    <tr
-                      key={`row-${row.rowIndex}`}
-                      className="hover:bg-blue-50/20 transition-colors border-b border-slate-200 last:border-b-0"
-                    >
-                      {row.cells.map((cell) => {
-                        // Omit covered cells (cells engulfed by a merge span)
-                        if (cell.isCovered) return null;
+                  {filteredRows.map((row) => {
+                    const isHeaderRow = row.rowIndex === 0 || row.rowIndex === 1;
+                    const isSectionBanner =
+                      !isHeaderRow &&
+                      row.cells.some((c) => !c.isCovered && c.colSpan >= 3 && c.style.bold);
 
-                        return <RenderTableCell key={`cell-${cell.rowIndex}-${cell.colIndex}`} cell={cell} />;
-                      })}
-                    </tr>
-                  ))}
+                    return (
+                      <tr
+                        key={`row-${row.rowIndex}`}
+                        className={`transition-colors border-b border-slate-200/90 ${
+                          isHeaderRow
+                            ? "bg-slate-100/95 font-semibold text-slate-900 sticky z-20 shadow-2xs"
+                            : isSectionBanner
+                            ? "bg-gradient-to-r from-indigo-50/70 via-blue-50/30 to-slate-50/50 font-semibold"
+                            : row.rowIndex % 2 === 1
+                            ? "bg-white hover:bg-indigo-50/40"
+                            : "bg-slate-50/40 hover:bg-indigo-50/40"
+                        }`}
+                        style={
+                          isHeaderRow
+                            ? { top: row.rowIndex === 0 ? "57px" : "93px" }
+                            : undefined
+                        }
+                      >
+                        {row.cells.map((cell) => {
+                          if (cell.isCovered) return null;
+                          return (
+                            <RenderTableCell
+                              key={`cell-${cell.rowIndex}-${cell.colIndex}`}
+                              cell={cell}
+                              isHeaderRow={isHeaderRow}
+                              isSectionBanner={isSectionBanner}
+                            />
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -222,22 +291,34 @@ export default function SheetViewer() {
   );
 }
 
-function RenderTableCell({ cell }: { cell: ParsedCell }) {
+function RenderTableCell({
+  cell,
+  isHeaderRow,
+  isSectionBanner,
+}: {
+  cell: ParsedCell;
+  isHeaderRow: boolean;
+  isSectionBanner: boolean;
+}) {
   const { formattedValue, rowSpan, colSpan, style } = cell;
 
-  // Compute text alignment
+  // Determine text alignment
   let alignClass = "text-left";
   if (style.horizontalAlignment === "CENTER") alignClass = "text-center";
   else if (style.horizontalAlignment === "RIGHT") alignClass = "text-right";
 
-  // Compute vertical alignment
+  // Determine vertical alignment
   let vAlignClass = "align-middle";
   if (style.verticalAlignment === "TOP") vAlignClass = "align-top";
   else if (style.verticalAlignment === "BOTTOM") vAlignClass = "align-bottom";
 
-  // Custom inline style overrides from Sheet
+  // Check if cell is numeric or currency
+  const isNumeric = formattedValue && /^[\d,.-]+(%?)$/.test(formattedValue.trim());
+  const isPercent = formattedValue && formattedValue.includes("%");
+
+  // Custom inline styles
   const customStyles: React.CSSProperties = {};
-  if (style.backgroundColor) {
+  if (style.backgroundColor && !isHeaderRow && !isSectionBanner) {
     customStyles.backgroundColor = style.backgroundColor;
   }
   if (style.textColor) {
@@ -252,15 +333,25 @@ function RenderTableCell({ cell }: { cell: ParsedCell }) {
       rowSpan={rowSpan > 1 ? rowSpan : undefined}
       colSpan={colSpan > 1 ? colSpan : undefined}
       style={customStyles}
-      className={`sheet-cell px-3.5 py-2.5 border border-slate-300 ${alignClass} ${vAlignClass} ${
-        style.bold ? "font-bold" : "font-normal"
+      className={`sheet-cell px-3.5 py-2.5 border border-slate-200 ${alignClass} ${vAlignClass} ${
+        style.bold ? "font-bold text-slate-900" : "font-normal text-slate-700"
       } ${style.italic ? "italic" : ""} ${
-        style.underline ? "underline" : ""
-      } ${style.strikethrough ? "line-through" : ""} transition-colors`}
+        isHeaderRow
+          ? "bg-slate-100/90 text-slate-900 font-semibold tracking-tight shadow-2xs"
+          : isSectionBanner && colSpan > 1
+          ? "border-l-4 border-l-indigo-600 text-indigo-950 font-bold text-sm sm:text-base py-3"
+          : ""
+      } ${isNumeric ? "font-mono font-medium tracking-tight text-slate-800" : ""} transition-colors`}
     >
-      <div className="leading-snug">
+      <div className="leading-relaxed">
         {formattedValue ? (
-          formattedValue
+          isPercent ? (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              {formattedValue}
+            </span>
+          ) : (
+            formattedValue
+          )
         ) : (
           <span className="inline-block min-h-[1.25rem] text-transparent select-none">-</span>
         )}
