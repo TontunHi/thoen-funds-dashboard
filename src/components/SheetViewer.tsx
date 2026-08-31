@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { ParsedSheetData, SheetApiResponse, ParsedCell } from "@/types/sheet";
 import { SHEET_CONFIG } from "@/config/sheet.config";
+import Link from "next/link";
 import {
   RefreshCw,
   ExternalLink,
@@ -12,6 +13,8 @@ import {
   FileSpreadsheet,
   Info,
   Search,
+  Table,
+  TrendingUp,
 } from "lucide-react";
 
 export default function SheetViewer() {
@@ -121,14 +124,32 @@ export default function SheetViewer() {
             </div>
           </div>
 
-          {/* Search Box & Action Buttons */}
+          {/* Navigation Tabs, Search Box & Action Buttons */}
           <div className="flex items-center flex-wrap gap-2.5 sm:gap-3">
+            {/* View Switcher Tabs */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80 shadow-2xs">
+              <Link
+                href="/"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-white shadow-2xs rounded-lg transition"
+              >
+                <Table className="w-3.5 h-3.5 text-blue-600" />
+                <span>ตารางข้อมูล</span>
+              </Link>
+              <Link
+                href="/analytics"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-white/60 rounded-lg transition"
+              >
+                <TrendingUp className="w-3.5 h-3.5 text-slate-500" />
+                <span>วิเคราะห์ข้อมูล</span>
+              </Link>
+            </div>
+
             {/* Quick Search Input */}
-            <div className="relative w-48 sm:w-64">
+            <div className="relative w-40 sm:w-56">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="ค้นหาข้อมูลในตาราง..."
+                placeholder="ค้นหาในตาราง..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-3.5 py-1.5 text-xs sm:text-sm bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 focus:border-blue-400 rounded-lg shadow-2xs outline-hidden transition placeholder:text-slate-400"
