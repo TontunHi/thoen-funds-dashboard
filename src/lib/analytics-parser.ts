@@ -2,21 +2,27 @@ import { ParsedSheetData } from "@/types/sheet";
 
 export interface CandlestickPoint {
   x: string;
-  y: [number, number, number, number]; // [Open, High, Low, Close]
+  y: [number, number, number, number]; // [Open: ปีก่อน 68, High: สูงสุด, Low: ต่ำสุด, Close: สะสมปีนี้]
+  prevYearBudget: number;
+  currentYearSpent: number;
+  changePercent: number;
   volume?: number;
 }
 
-export interface VolumePoint {
-  x: string;
-  y: number;
+export interface ProjectCandleItem {
+  name: string;
+  category: string;
+  candle: CandlestickPoint;
 }
 
 export interface CategorySummary {
   name: string;
-  budget: number;
-  spent: number;
+  budget: number; // ผลงานปีก่อน 68
+  spent: number; // รวมสะสมปีนี้
   percentage: number;
   itemCount: number;
+  candle: CandlestickPoint;
+  projectCandles: ProjectCandleItem[];
 }
 
 export interface AnalyticsData {
@@ -24,15 +30,14 @@ export interface AnalyticsData {
     totalBudget: number;
     totalSpent: number;
     progressPercent: number;
+    growthRate: number;
     peakMonth: string;
     peakMonthAmount: number;
     activeCategories: number;
     totalItems: number;
   };
-  monthlyCandlestick: CandlestickPoint[];
-  monthlyVolume: VolumePoint[];
-  categoryCandlestick: CandlestickPoint[];
-  categoryVolume: VolumePoint[];
+  categoryCandlesticks: CandlestickPoint[];
+  allProjectsCandlesticks: ProjectCandleItem[];
   monthlyTrend: {
     months: string[];
     monthlyDisbursement: number[];
@@ -67,6 +72,55 @@ function parseNumeric(val?: string): number {
   return isNaN(num) ? 0 : num;
 }
 
+function createCandlePoint(
+  label: string,
+  prevBudget: number,
+  currSpent: number,
+  monthlyVals: number[] = []
+): CandlestickPoint {
+  const open = prevBudget;
+  const close = currSpent;
+
+  // Compute High and Low
+  const validMonthly = monthlyVals.filter((v) => v > 0);
+  const maxMonth = validMonthly.length > 0 ? Math.max(...validMonthly) : 0;
+  const minMonth = validMonthly.length > 0 ? Math.min(...validMonthly) : 0;
+
+  // High should be at least max(open, close)
+  let high = Math.max(open, close);
+  if (high === 0 && maxMonth > 0) high = maxMonth;
+  if (high > 0 && maxMonth > 0) {
+    high = Math.max(high, maxMonth * 1.1);
+  }
+
+  // Low should be at most min(open, close)
+  let low = Math.min(open, close);
+  if (minMonth > 0 && minMonth < low) {
+    low = minMonth * 0.9;
+  }
+  if (low <= 0 && high > 0) {
+    low = Math.round(high * 0.05); // Give a slight baseline wick
+  }
+
+  // If open and close are identical and 0
+  if (open === 0 && close === 0) {
+    high = 0;
+    low = 0;
+  }
+
+  const diff = currSpent - prevBudget;
+  const changePercent = prevBudget > 0 ? Math.round((diff / prevBudget) * 1000) / 10 : 0;
+
+  return {
+    x: label,
+    y: [Math.round(open), Math.round(high), Math.round(low), Math.round(close)],
+    prevYearBudget: Math.round(open),
+    currentYearSpent: Math.round(close),
+    changePercent,
+    volume: Math.round(currSpent),
+  };
+}
+
 export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData {
   const rows = sheetData.rows;
   if (!rows || rows.length <= 2) {
@@ -88,7 +142,6 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
   >();
 
   const monthlyTotals: number[] = new Array(12).fill(0);
-  const monthlyValuesList: number[][] = Array.from({ length: 12 }, () => []);
 
   let totalBudget = 0;
   let totalSpent = 0;
@@ -115,15 +168,10 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
     }
 
     // Process Project Item row
-    // Column 0: Item Name
-    // Column 1: Budget 68
-    // Column 2: Accumulated Spent
-    // Columns 3..14: Monthly disbursements (Oct to Sep)
     const itemName = firstCellText;
-    const budgetVal = parseNumeric(row.cells[1]?.formattedValue);
-    const spentVal = parseNumeric(row.cells[2]?.formattedValue);
+    const budgetVal = parseNumeric(row.cells[1]?.formattedValue); // ผลงานปี 68
+    const spentVal = parseNumeric(row.cells[2]?.formattedValue); // รวมสะสมปีนี้
 
-    // Skip if row has no data or is an empty row
     if (!itemName && budgetVal === 0 && spentVal === 0) continue;
 
     totalItemsCount++;
@@ -143,9 +191,6 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
       const mVal = parseNumeric(row.cells[monthColIdx]?.formattedValue);
       itemMonthly.push(mVal);
       monthlyTotals[m] += mVal;
-      if (mVal > 0) {
-        monthlyValuesList[m].push(mVal);
-      }
     }
 
     catEntry.items.push({
@@ -156,72 +201,34 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
     });
   }
 
-  // 1. Monthly Candlestick (OHLC) + Volume
-  const monthlyCandlestick: CandlestickPoint[] = [];
-  const monthlyVolume: VolumePoint[] = [];
-  let peakMonth = MONTH_NAMES[0];
-  let peakMonthAmount = 0;
-
-  for (let m = 0; m < 12; m++) {
-    const monthName = MONTH_NAMES[m];
-    const values = monthlyValuesList[m];
-    const totalMonth = monthlyTotals[m];
-
-    if (totalMonth > peakMonthAmount) {
-      peakMonthAmount = totalMonth;
-      peakMonth = monthName;
-    }
-
-    if (values.length > 0) {
-      const open = values[0];
-      const high = Math.max(...values);
-      const low = Math.min(...values);
-      const close = values[values.length - 1];
-      monthlyCandlestick.push({
-        x: monthName,
-        y: [open, high, low, close],
-        volume: totalMonth,
-      });
-    } else {
-      monthlyCandlestick.push({
-        x: monthName,
-        y: [0, 0, 0, 0],
-        volume: 0,
-      });
-    }
-
-    monthlyVolume.push({
-      x: monthName,
-      y: totalMonth,
-    });
-  }
-
-  // 2. Category Candlestick + Volume
-  const categoryCandlestick: CandlestickPoint[] = [];
-  const categoryVolume: VolumePoint[] = [];
+  // Build Categories & Candlesticks (Year-over-Year: Open=ปีก่อน, Close=สะสมปีนี้)
+  const categoryCandlesticks: CandlestickPoint[] = [];
+  const allProjectsCandlesticks: ProjectCandleItem[] = [];
   const categoriesList: CategorySummary[] = [];
 
   categoryMap.forEach((val, catName) => {
     if (val.budget > 0 || val.spent > 0 || val.items.length > 0) {
-      const itemSpents = val.items.map((it) => it.spent).filter((s) => s > 0);
-      const open = itemSpents.length > 0 ? itemSpents[0] : 0;
-      const high = itemSpents.length > 0 ? Math.max(...itemSpents) : val.budget;
-      const low = itemSpents.length > 0 ? Math.min(...itemSpents) : 0;
-      const close = val.spent;
+      // Gather all monthly numbers in this category
+      const catMonthlyAll: number[] = [];
+      val.items.forEach((it) => it.monthly.forEach((m) => catMonthlyAll.push(m)));
 
-      // Shorten name if too long for chart label
-      const shortName = catName.length > 25 ? catName.substring(0, 22) + "..." : catName;
+      const shortName = catName.length > 28 ? catName.substring(0, 25) + "..." : catName;
+      const catCandle = createCandlePoint(shortName, val.budget, val.spent, catMonthlyAll);
 
-      categoryCandlestick.push({
-        x: shortName,
-        y: [open, high, low, close],
-        volume: val.spent,
+      categoryCandlesticks.push(catCandle);
+
+      // Build individual project candles in this category
+      const projectCandles: ProjectCandleItem[] = val.items.map((it) => {
+        const itemShortName = it.name.length > 32 ? it.name.substring(0, 30) + "..." : it.name;
+        const candle = createCandlePoint(itemShortName, it.budget, it.spent, it.monthly);
+        return {
+          name: it.name,
+          category: catName,
+          candle,
+        };
       });
 
-      categoryVolume.push({
-        x: shortName,
-        y: val.spent,
-      });
+      allProjectsCandlesticks.push(...projectCandles);
 
       const pct = val.budget > 0 ? (val.spent / val.budget) * 100 : 0;
       categoriesList.push({
@@ -230,19 +237,29 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
         spent: val.spent,
         percentage: Math.round(pct * 10) / 10,
         itemCount: val.items.length,
+        candle: catCandle,
+        projectCandles,
       });
     }
   });
 
-  // 3. Monthly Spending Trend & Cumulative
+  // Monthly Spending Trend & Cumulative
   let runningSum = 0;
+  let peakMonth = MONTH_NAMES[0];
+  let peakMonthAmount = 0;
   const cumulativeDisbursement: number[] = [];
+
   for (let m = 0; m < 12; m++) {
-    runningSum += monthlyTotals[m];
+    const totalMonth = monthlyTotals[m];
+    if (totalMonth > peakMonthAmount) {
+      peakMonthAmount = totalMonth;
+      peakMonth = MONTH_NAMES[m];
+    }
+    runningSum += totalMonth;
     cumulativeDisbursement.push(runningSum);
   }
 
-  // 4. Category Donut Chart
+  // Category Donut Chart
   const topCategories = [...categoriesList].sort((a, b) => b.budget - a.budget).slice(0, 7);
   const categoryDonut = {
     labels: topCategories.map((c) => c.name.length > 20 ? c.name.substring(0, 18) + "..." : c.name),
@@ -250,21 +267,21 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
   };
 
   const progressPercent = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 1000) / 10 : 0;
+  const growthRate = totalBudget > 0 ? Math.round(((totalSpent - totalBudget) / totalBudget) * 1000) / 10 : 0;
 
   return {
     kpi: {
       totalBudget,
       totalSpent,
       progressPercent,
+      growthRate,
       peakMonth,
       peakMonthAmount,
       activeCategories: categoriesList.length,
       totalItems: totalItemsCount,
     },
-    monthlyCandlestick,
-    monthlyVolume,
-    categoryCandlestick,
-    categoryVolume,
+    categoryCandlesticks,
+    allProjectsCandlesticks,
     monthlyTrend: {
       months: MONTH_NAMES,
       monthlyDisbursement: monthlyTotals,
@@ -276,51 +293,47 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
 }
 
 function getFallbackAnalytics(): AnalyticsData {
+  const fallbackCats = [
+    { name: "การฝากครรภ์", budget: 603410, spent: 471835 },
+    { name: "ตรวจสุขภาพประชาชนทั่วไป", budget: 320000, spent: 395000 },
+    { name: "NCD จิตเวช ปฐมภูมิ กายภาพ", budget: 410000, spent: 390000 },
+    { name: "อสม.+ผู้นำชุมชน", budget: 250000, spent: 275000 },
+  ];
+
+  const catCandles: CandlestickPoint[] = fallbackCats.map((c) =>
+    createCandlePoint(c.name, c.budget, c.spent, [c.spent * 0.1, c.spent * 0.15])
+  );
+
   return {
     kpi: {
-      totalBudget: 1330000,
-      totalSpent: 1260000,
-      progressPercent: 94.7,
+      totalBudget: 1583410,
+      totalSpent: 1531835,
+      progressPercent: 96.7,
+      growthRate: -3.3,
       peakMonth: "มี.ค. 69",
       peakMonthAmount: 340000,
       activeCategories: 4,
-      totalItems: 8,
+      totalItems: 14,
     },
-    monthlyCandlestick: MONTH_NAMES.map((m, i) => ({
-      x: m,
-      y: [30000 + i * 2000, 65000 + i * 4000, 15000, 48000 + i * 3000],
-      volume: 105000 + i * 8000,
-    })),
-    monthlyVolume: MONTH_NAMES.map((m, i) => ({
-      x: m,
-      y: 105000 + i * 8000,
-    })),
-    categoryCandlestick: [
-      { x: "การฝากครรภ์", y: [30000, 544000, 30000, 305000], volume: 305000 },
-      { x: "ตรวจสุขภาพ", y: [50000, 320000, 40000, 280000], volume: 280000 },
-      { x: "NCD ปฐมภูมิ", y: [45000, 410000, 20000, 390000], volume: 390000 },
-      { x: "อสม. ชุมชน", y: [60000, 250000, 50000, 240000], volume: 240000 },
-    ],
-    categoryVolume: [
-      { x: "การฝากครรภ์", y: 305000 },
-      { x: "ตรวจสุขภาพ", y: 280000 },
-      { x: "NCD ปฐมภูมิ", y: 390000 },
-      { x: "อสม. ชุมชน", y: 240000 },
-    ],
+    categoryCandlesticks: catCandles,
+    allProjectsCandlesticks: [],
     monthlyTrend: {
       months: MONTH_NAMES,
       monthlyDisbursement: [95000, 110000, 125000, 85000, 140000, 180000, 95000, 105000, 115000, 90000, 70000, 50000],
       cumulativeDisbursement: [95000, 205000, 330000, 415000, 555000, 735000, 830000, 935000, 1050000, 1140000, 1210000, 1260000],
     },
     categoryDonut: {
-      labels: ["การฝากครรภ์", "ตรวจสุขภาพ", "NCD ปฐมภูมิ", "อสม. ชุมชน"],
-      series: [603410, 320000, 410000, 250000],
+      labels: fallbackCats.map((c) => c.name),
+      series: fallbackCats.map((c) => c.budget),
     },
-    categories: [
-      { name: "การฝากครรภ์", budget: 603410, spent: 471835, percentage: 78.2, itemCount: 4 },
-      { name: "ตรวจสุขภาพประชาชน", budget: 320000, spent: 280000, percentage: 87.5, itemCount: 3 },
-      { name: "NCD จิตเวช ปฐมภูมิ", budget: 410000, spent: 390000, percentage: 95.1, itemCount: 5 },
-      { name: "อสม.+ผู้นำชุมชน", budget: 250000, spent: 240000, percentage: 96.0, itemCount: 2 },
-    ],
+    categories: fallbackCats.map((c, i) => ({
+      name: c.name,
+      budget: c.budget,
+      spent: c.spent,
+      percentage: Math.round((c.spent / c.budget) * 1000) / 10,
+      itemCount: 3,
+      candle: catCandles[i],
+      projectCandles: [],
+    })),
   };
 }

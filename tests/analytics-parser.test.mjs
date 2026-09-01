@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { computeAnalyticsData } from "../src/lib/analytics-parser.ts";
 
-test("computeAnalyticsData computes valid candlestick and KPI data", () => {
+test("computeAnalyticsData generates Year-over-Year candlestick comparison", () => {
   const mockSheetData = {
-    title: "Test Analytics",
+    title: "Test Analytics YoY",
     sheetId: 806124582,
     rowCount: 5,
     columnCount: 15,
@@ -25,12 +25,12 @@ test("computeAnalyticsData computes valid candlestick and KPI data", () => {
       {
         rowIndex: 3,
         cells: [
-          { rowIndex: 3, colIndex: 0, formattedValue: "โครงการ 1", rowSpan: 1, colSpan: 1, isCovered: false, style: {} },
-          { rowIndex: 3, colIndex: 1, formattedValue: "100,000", rowSpan: 1, colSpan: 1, isCovered: false, style: {} },
-          { rowIndex: 3, colIndex: 2, formattedValue: "80,000", rowSpan: 1, colSpan: 1, isCovered: false, style: {} },
-          { rowIndex: 3, colIndex: 3, formattedValue: "20,000", rowSpan: 1, colSpan: 1, isCovered: false, style: {} },
-          { rowIndex: 3, colIndex: 4, formattedValue: "30,000", rowSpan: 1, colSpan: 1, isCovered: false, style: {} },
-          { rowIndex: 3, colIndex: 5, formattedValue: "30,000", rowSpan: 1, colSpan: 1, isCovered: false, style: {} },
+          { rowIndex: 3, colIndex: 0, formattedValue: "โครงการอัลตราซาวด์", rowSpan: 1, colSpan: 1, isCovered: false, style: {} },
+          { rowIndex: 3, colIndex: 1, formattedValue: "30,000", rowSpan: 1, colSpan: 1, isCovered: false, style: {} }, // ปีก่อน
+          { rowIndex: 3, colIndex: 2, formattedValue: "37,200", rowSpan: 1, colSpan: 1, isCovered: false, style: {} }, // ปีนี้ (โตขึ้น)
+          { rowIndex: 3, colIndex: 3, formattedValue: "6,000", rowSpan: 1, colSpan: 1, isCovered: false, style: {} },
+          { rowIndex: 3, colIndex: 4, formattedValue: "1,600", rowSpan: 1, colSpan: 1, isCovered: false, style: {} },
+          { rowIndex: 3, colIndex: 5, formattedValue: "4,400", rowSpan: 1, colSpan: 1, isCovered: false, style: {} },
         ],
       },
     ],
@@ -38,11 +38,17 @@ test("computeAnalyticsData computes valid candlestick and KPI data", () => {
 
   const analytics = computeAnalyticsData(mockSheetData as any);
 
-  assert.equal(analytics.kpi.totalBudget, 100000);
-  assert.equal(analytics.kpi.totalSpent, 80000);
-  assert.equal(analytics.kpi.progressPercent, 80);
-  assert.equal(analytics.monthlyCandlestick.length, 12);
-  assert.equal(analytics.monthlyTrend.monthlyDisbursement.length, 12);
-  assert.equal(analytics.monthlyTrend.cumulativeDisbursement.length, 12);
-  assert.ok(analytics.categoryDonut.series.length > 0);
+  assert.equal(analytics.kpi.totalBudget, 30000);
+  assert.equal(analytics.kpi.totalSpent, 37200);
+  assert.equal(analytics.categoryCandlesticks.length, 1);
+
+  // Check candlestick point values
+  const candle = analytics.categoryCandlesticks[0];
+  assert.equal(candle.prevYearBudget, 30000); // Open
+  assert.equal(candle.currentYearSpent, 37200); // Close
+  assert.equal(candle.y[0], 30000); // Open
+  assert.equal(candle.y[3], 37200); // Close
+  assert.ok(candle.y[1] >= 37200); // High >= Close
+  assert.ok(candle.y[2] <= 30000); // Low <= Open
+  assert.equal(candle.changePercent, 24); // +24% growth
 });
