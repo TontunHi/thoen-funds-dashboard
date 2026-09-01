@@ -21,7 +21,10 @@ import {
   ArrowDownRight,
   FileSpreadsheet,
   BarChart2,
-  GitCompare,
+  Filter,
+  CheckSquare,
+  Square,
+  HelpCircle,
 } from "lucide-react";
 
 // Dynamically import react-apexcharts to prevent SSR window reference error
@@ -38,6 +41,8 @@ export default function AnalyticsDashboard() {
   const [sheetData, setSheetData] = useState<ParsedSheetData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [showEquationModal, setShowEquationModal] = useState<boolean>(false);
 
   const fetchData = useCallback(async (manual = false) => {
     if (manual) setIsRefreshing(true);
@@ -64,6 +69,29 @@ export default function AnalyticsDashboard() {
     return computeAnalyticsData(sheetData);
   }, [sheetData]);
 
+  // Set default selected categories on load (all selected)
+  useEffect(() => {
+    if (analytics && analytics.categoryDetails.length > 0 && selectedCategories.length === 0) {
+      setSelectedCategories(analytics.categoryDetails.map((c) => c.category));
+    }
+  }, [analytics, selectedCategories.length]);
+
+  const toggleCategory = (catName: string) => {
+    setSelectedCategories((prev) =>
+      prev.includes(catName) ? prev.filter((c) => c !== catName) : [...prev, catName]
+    );
+  };
+
+  const selectAllCategories = () => {
+    if (analytics) {
+      setSelectedCategories(analytics.categoryDetails.map((c) => c.category));
+    }
+  };
+
+  const clearAllCategories = () => {
+    setSelectedCategories([]);
+  };
+
   const googleSheetUrl = `https://docs.google.com/spreadsheets/d/${SHEET_CONFIG.SPREADSHEET_ID}/edit#gid=${SHEET_CONFIG.SHEET_GID}`;
 
   const formatCurrency = (val: number) => {
@@ -73,20 +101,25 @@ export default function AnalyticsDashboard() {
     }).format(val);
   };
 
-  // 1. Solid Dual-Bar Comparison Chart (กราฟแท่งคู่ตัน ไม่มีไส้เทียน สไตล์ Modern Dashboard)
-  const categoryBarSeries = useMemo(() => {
+  // 1. Filtered Side-by-Side Comparison Bar Chart based on Selected Categories
+  const filteredCategoryDetails = useMemo(() => {
     if (!analytics) return [];
+    if (selectedCategories.length === 0) return analytics.categoryDetails;
+    return analytics.categoryDetails.filter((c) => selectedCategories.includes(c.category));
+  }, [analytics, selectedCategories]);
+
+  const categoryBarSeries = useMemo(() => {
     return [
       {
         name: "ผลงานปีก่อน 68 (Baseline)",
-        data: analytics.categoryComparisonBar.prevYearSeries,
+        data: filteredCategoryDetails.map((c) => c.prevYearBudget),
       },
       {
         name: "ยอดสะสมปีนี้ (Actual)",
-        data: analytics.categoryComparisonBar.currentYearSeries,
+        data: filteredCategoryDetails.map((c) => c.currentYearSpent),
       },
     ];
-  }, [analytics]);
+  }, [filteredCategoryDetails]);
 
   const categoryBarOptions: ApexCharts.ApexOptions = {
     chart: {
@@ -108,18 +141,15 @@ export default function AnalyticsDashboard() {
       animations: {
         enabled: true,
         easing: "easeinout",
-        speed: 700,
+        speed: 600,
       },
     },
     plotOptions: {
       bar: {
         horizontal: false,
-        columnWidth: "50%",
+        columnWidth: filteredCategoryDetails.length <= 4 ? "35%" : "50%",
         borderRadius: 6,
         borderRadiusApplication: "end",
-        dataLabels: {
-          position: "top",
-        },
       },
     },
     dataLabels: {
@@ -130,7 +160,7 @@ export default function AnalyticsDashboard() {
       width: 2,
       colors: ["transparent"],
     },
-    colors: ["#3b82f6", "#10b981"], // แท่งน้ำเงิน vs แท่งเขียวมรกต
+    colors: ["#3b82f6", "#10b981"],
     fill: {
       opacity: 0.95,
       type: "gradient",
@@ -152,10 +182,12 @@ export default function AnalyticsDashboard() {
       },
     },
     xaxis: {
-      categories: analytics?.categoryComparisonBar.categories || [],
+      categories: filteredCategoryDetails.map((c) =>
+        c.category.length > 20 ? c.category.substring(0, 18) + "..." : c.category
+      ),
       labels: {
         rotate: -25,
-        rotateAlways: true,
+        rotateAlways: filteredCategoryDetails.length > 3,
         trim: true,
         maxHeight: 120,
         style: {
@@ -181,7 +213,8 @@ export default function AnalyticsDashboard() {
       shared: true,
       intersect: false,
       custom: ({ series, seriesIndex, dataPointIndex, w }) => {
-        const catName = analytics?.categoryDetails[dataPointIndex]?.category || w.globals.categoryLabels[dataPointIndex];
+        const cat = filteredCategoryDetails[dataPointIndex];
+        const catName = cat?.category || w.globals.categoryLabels[dataPointIndex];
         const prev = series[0]?.[dataPointIndex] || 0;
         const curr = series[1]?.[dataPointIndex] || 0;
         const diff = curr - prev;
@@ -489,9 +522,9 @@ export default function AnalyticsDashboard() {
           </div>
         )}
 
-        {/* 2. Main Executive Comparison Bar Chart (กราฟแท่งคู่เปรียบเทียบเคียงข้าง ไม่มีไส้เทียน) */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-4 pb-3 border-b border-slate-100">
+        {/* 2. Main Executive Comparison Bar Chart with Category Filter */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
               <div className="p-2 bg-blue-50 text-blue-700 rounded-lg">
                 <BarChart2 className="w-5 h-5" />
@@ -505,19 +538,79 @@ export default function AnalyticsDashboard() {
                   <span>•</span>
                   <span className="font-medium text-emerald-700">🟩 แท่งสีเขียว: ยอดสะสมปีนี้</span>
                   <span>•</span>
-                  <span>แสดงแท่งคู่ทึบแบบไม่มีไส้เทียน เปรียบเทียบผลงานชัดเจนในทุกหมวด</span>
+                  <span>เลือกติ๊กหมวดหมู่ด้านล่างเพื่อเปรียบเทียบเฉพาะรายการที่ต้องการ</span>
                 </p>
               </div>
             </div>
+
+            {/* Quick Actions (Select All / Clear) */}
+            <div className="flex items-center gap-2 text-xs">
+              <button
+                onClick={selectAllCategories}
+                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition"
+              >
+                เลือกทั้งหมด
+              </button>
+              <button
+                onClick={clearAllCategories}
+                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition"
+              >
+                ล้างการเลือก
+              </button>
+            </div>
           </div>
 
+          {/* Interactive Category Selector Pills */}
+          {analytics && analytics.categoryDetails.length > 0 && (
+            <div className="flex items-center flex-wrap gap-1.5 p-3 bg-slate-50/80 rounded-xl border border-slate-200/70">
+              <span className="text-xs font-semibold text-slate-600 mr-1 flex items-center gap-1">
+                <Filter className="w-3.5 h-3.5 text-blue-600" />
+                เลือกรายการ:
+              </span>
+              {analytics.categoryDetails.map((cat, idx) => {
+                const isSelected = selectedCategories.includes(cat.category);
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => toggleCategory(cat.category)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer ${
+                      isSelected
+                        ? "bg-blue-600 text-white shadow-2xs"
+                        : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                    }`}
+                  >
+                    {isSelected ? (
+                      <CheckSquare className="w-3.5 h-3.5 text-white" />
+                    ) : (
+                      <Square className="w-3.5 h-3.5 text-slate-400" />
+                    )}
+                    <span>{cat.category}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Chart Display */}
           <div className="w-full pt-2">
-            <Chart
-              options={categoryBarOptions}
-              series={categoryBarSeries}
-              type="bar"
-              height={440}
-            />
+            {filteredCategoryDetails.length > 0 ? (
+              <Chart
+                options={categoryBarOptions}
+                series={categoryBarSeries}
+                type="bar"
+                height={440}
+              />
+            ) : (
+              <div className="w-full h-80 flex flex-col items-center justify-center text-slate-400 text-sm">
+                <p>กรุณาเลือกอย่างน้อย 1 หมวดหมู่เพื่อแสดงผลกราฟเปรียบเทียบ</p>
+                <button
+                  onClick={selectAllCategories}
+                  className="mt-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100 transition"
+                >
+                  เลือกหมวดหมู่ทั้งหมด
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -525,18 +618,30 @@ export default function AnalyticsDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Trend Chart (2 Cols) */}
           <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm">
-            <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-100">
-              <div className="p-2 bg-blue-50 text-blue-700 rounded-lg">
-                <BarChart3 className="w-5 h-5" />
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-blue-50 text-blue-700 rounded-lg">
+                  <BarChart3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">
+                    แนวโน้มการเบิกจ่ายรายเดือนและยอดสะสม
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    ยอดเบิกจ่ายแต่ละเดือน (แท่งสีฟ้า) กับยอดสะสมรวม (เส้นสีเขียว)
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-base font-bold text-slate-900">
-                  แนวโน้มการเบิกจ่ายรายเดือนและยอดสะสม
-                </h2>
-                <p className="text-xs text-slate-500">
-                  เปรียบเทียบยอดเบิกจ่ายแต่ละเดือน (แท่งสีฟ้า) กับยอดสะสมรวม (เส้นสีเขียว)
-                </p>
-              </div>
+
+              {/* Info Button for Equation */}
+              <button
+                onClick={() => setShowEquationModal(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-lg transition"
+                title="ดูที่มาของข้อมูลและสมการคำนวณ"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                <span>ที่มาข้อมูล & สมการ</span>
+              </button>
             </div>
             <div className="w-full pt-2">
               <Chart options={trendOptions} series={trendSeries} type="line" height={350} />
@@ -562,7 +667,7 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* 4. Category Execution Progress Table */}
+        {/* 4. Category Execution Progress Table (เรียงตาม Sheet และไม่มีบอกเลขแถว) */}
         {analytics && analytics.categoryDetails.length > 0 && (
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
@@ -571,7 +676,7 @@ export default function AnalyticsDashboard() {
                   ตารางเปรียบเทียบผลงานรายหมวดหมู่กองทุน (Year-over-Year Summary)
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  เปรียบเทียบผลงานปีก่อน 68 กับ ยอดเบิกจ่ายสะสมปีนี้
+                  เรียงตามลำดับโครงสร้างหมวดหมู่ใน Google Sheet
                 </p>
               </div>
             </div>
@@ -581,7 +686,6 @@ export default function AnalyticsDashboard() {
                 <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
                   <tr>
                     <th className="py-3 px-4">ชื่อหมวดหมู่กองทุน</th>
-                    <th className="py-3 px-4 text-center">แถวใน Sheet</th>
                     <th className="py-3 px-4 text-center">จำนวนโครงการ</th>
                     <th className="py-3 px-4 text-right">ผลงานปีก่อน 68 (บาท)</th>
                     <th className="py-3 px-4 text-right">สะสมปีนี้ (บาท)</th>
@@ -596,9 +700,6 @@ export default function AnalyticsDashboard() {
                       <tr key={idx} className="hover:bg-slate-50/60 transition">
                         <td className="py-3.5 px-4 font-medium text-slate-900">
                           {cat.category}
-                        </td>
-                        <td className="py-3.5 px-4 text-center font-mono text-slate-500">
-                          {cat.sheetRow ? `แถวที่ ${cat.sheetRow}` : "-"}
                         </td>
                         <td className="py-3.5 px-4 text-center text-slate-600 font-mono">
                           {cat.itemCount}
@@ -629,6 +730,64 @@ export default function AnalyticsDashboard() {
           </div>
         )}
       </main>
+
+      {/* Equation & Data Source Explanation Modal */}
+      {showEquationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-blue-600" />
+                ที่มาข้อมูลและสมการคำนวณกราฟแนวโน้มรายเดือน
+              </h3>
+              <button
+                onClick={() => setShowEquationModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs sm:text-sm text-slate-700">
+              <div>
+                <p className="font-semibold text-slate-900">1. ส่วนของข้อมูลที่ดึงมา (Data Source):</p>
+                <p className="mt-0.5 text-slate-600">
+                  ดึงจาก <strong>คอลัมน์ F ถึง Q</strong> (ข้อมูลรายเดือน 12 เดือน: ต.ค. 68 ถึง ก.ย. 69) ของทุกโครงการย่อยในชีต <code>ติดตามผลงาน</code>
+                </p>
+              </div>
+
+              <div>
+                <p className="font-semibold text-slate-900">2. ยอดเบิกจ่ายประจำเดือน (แท่งสีฟ้า - Monthly Bar):</p>
+                <p className="mt-0.5 text-slate-600">
+                  ผลรวมของยอดเงินเบิกจ่ายที่เกิดขึ้นจริงในเดือน $m$ ของทุกโครงการย่อย:
+                </p>
+                <div className="mt-1 p-2.5 bg-slate-50 rounded-lg font-mono text-xs text-blue-700 border border-slate-200">
+                  Monthly[m] = Sum( Row[i][Month_m] ) สำหรับทุกโครงการ i
+                </div>
+              </div>
+
+              <div>
+                <p className="font-semibold text-slate-900">3. ยอดสะสม (เส้นสีเขียว - Cumulative Line):</p>
+                <p className="mt-0.5 text-slate-600">
+                  ผลรวมสะสมต่อเนื่องตั้งแต่เดือนแรก (ต.ค. 68) บวกสะสมไปจนถึงเดือน $m$:
+                </p>
+                <div className="mt-1 p-2.5 bg-slate-50 rounded-lg font-mono text-xs text-emerald-700 border border-slate-200">
+                  Cumulative[m] = Cumulative[m - 1] + Monthly[m]
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setShowEquationModal(false)}
+                className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-medium text-xs transition"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
