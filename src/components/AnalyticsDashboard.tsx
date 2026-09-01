@@ -24,6 +24,7 @@ import {
   FileSpreadsheet,
   CheckCircle2,
   HelpCircle,
+  BarChart2,
 } from "lucide-react";
 
 // Dynamically import react-apexcharts to prevent SSR window reference error
@@ -69,7 +70,6 @@ export default function AnalyticsDashboard() {
 
   const googleSheetUrl = `https://docs.google.com/spreadsheets/d/${SHEET_CONFIG.SPREADSHEET_ID}/edit#gid=${SHEET_CONFIG.SHEET_GID}`;
 
-  // Formatting helpers
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat("th-TH", {
       style: "decimal",
@@ -77,7 +77,7 @@ export default function AnalyticsDashboard() {
     }).format(val);
   };
 
-  // 1. Candlestick Data based on Category Filter
+  // 1. Active Candlestick Points (All Categories or Specific Project Drilldown)
   const activeCandleData: CandlestickPoint[] = useMemo(() => {
     if (!analytics) return [];
     if (selectedCategory === "ALL") {
@@ -102,7 +102,7 @@ export default function AnalyticsDashboard() {
   const candlestickOptions: ApexCharts.ApexOptions = {
     chart: {
       type: "candlestick",
-      height: 420,
+      height: 440,
       fontFamily: "var(--font-prompt), sans-serif",
       toolbar: {
         show: true,
@@ -125,8 +125,8 @@ export default function AnalyticsDashboard() {
     plotOptions: {
       candlestick: {
         colors: {
-          upward: "#10b981", // Green (ปีนี้โตขึ้นกว่าปีก่อน)
-          downward: "#ef4444", // Red (ปีนี้ยังน้อยกว่าปีก่อน)
+          upward: "#10b981", // Green: ปีนี้ > ปีก่อน
+          downward: "#ef4444", // Red: ปีนี้ < ปีก่อน
         },
         wick: {
           useFillColor: true,
@@ -136,14 +136,14 @@ export default function AnalyticsDashboard() {
     xaxis: {
       type: "category",
       labels: {
-        rotate: -20,
-        rotateAlways: activeCandleData.length > 4,
+        rotate: -25,
+        rotateAlways: activeCandleData.length > 3,
         trim: true,
-        maxHeight: 100,
+        maxHeight: 120,
         style: {
-          colors: "#475569",
+          colors: "#334155",
           fontSize: "11px",
-          fontWeight: 500,
+          fontWeight: 600,
         },
       },
       axisBorder: {
@@ -174,32 +174,32 @@ export default function AnalyticsDashboard() {
         const isGrowth = curr >= prev;
 
         return `
-          <div style="padding: 14px 16px; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); font-family: var(--font-prompt), sans-serif; font-size: 12px; color: #1e293b; min-width: 250px;">
+          <div style="padding: 14px 16px; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); font-family: var(--font-prompt), sans-serif; font-size: 12px; color: #1e293b; min-width: 260px;">
             <div style="font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 8px; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px;">
               ${categoryName}
             </div>
             <div style="margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; background: ${isGrowth ? "#ecfdf5" : "#fef2f2"}; padding: 6px 10px; border-radius: 6px;">
               <span style="font-weight: 600; color: ${isGrowth ? "#065f46" : "#991b1b"}; font-size: 11px;">
-                ${isGrowth ? "▲ เติบโตขึ้น (ปีนี้ > ปีก่อน)" : "▼ ยังตามหลัง (ปีนี้ < ปีก่อน)"}
+                ${isGrowth ? "▲ ผลงานเติบโตขึ้น (ปีนี้ > ปีก่อน)" : "▼ ยังตามหลัง (ปีนี้ < ปีก่อน)"}
               </span>
               <strong style="color: ${isGrowth ? "#059669" : "#dc2626"}; font-family: monospace; font-size: 12px;">
                 ${pct > 0 ? "+" : ""}${pct}%
               </strong>
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px;">
-              <div style="background: #f8fafc; padding: 6px 8px; rounded: 6px;">
+              <div style="background: #f8fafc; padding: 6px 8px; border-radius: 6px; border: 1px solid #f1f5f9;">
                 <div style="color: #64748b;">ผลงานปีก่อน 68 (Open)</div>
                 <strong style="color: #3b82f6; font-family: monospace; font-size: 12px;">${formatCurrency(prev)} ฿</strong>
               </div>
-              <div style="background: #f8fafc; padding: 6px 8px; rounded: 6px;">
+              <div style="background: #f8fafc; padding: 6px 8px; border-radius: 6px; border: 1px solid #f1f5f9;">
                 <div style="color: #64748b;">สะสมปีนี้ (Close)</div>
                 <strong style="color: ${isGrowth ? "#10b981" : "#ef4444"}; font-family: monospace; font-size: 12px;">${formatCurrency(curr)} ฿</strong>
               </div>
-              <div style="background: #f8fafc; padding: 6px 8px; rounded: 6px;">
+              <div style="background: #f8fafc; padding: 6px 8px; border-radius: 6px; border: 1px solid #f1f5f9;">
                 <div style="color: #64748b;">ยอดสูงสุด (High)</div>
                 <strong style="color: #475569; font-family: monospace;">${formatCurrency(high)} ฿</strong>
               </div>
-              <div style="background: #f8fafc; padding: 6px 8px; rounded: 6px;">
+              <div style="background: #f8fafc; padding: 6px 8px; border-radius: 6px; border: 1px solid #f1f5f9;">
                 <div style="color: #64748b;">ยอดต่ำสุด (Low)</div>
                 <strong style="color: #475569; font-family: monospace;">${formatCurrency(low)} ฿</strong>
               </div>
@@ -214,7 +214,78 @@ export default function AnalyticsDashboard() {
     },
   };
 
-  // 2. Monthly Trend Options & Series
+  // 2. Category Side-by-Side Double Bar Chart (เปรียบเทียบเคียงข้าง)
+  const categoryBarSeries = useMemo(() => {
+    if (!analytics) return [];
+    return [
+      {
+        name: "ผลงานปีก่อน 68 (บาท)",
+        data: analytics.categoryComparisonBar.prevYearSeries,
+      },
+      {
+        name: "ยอดสะสมปีนี้ (บาท)",
+        data: analytics.categoryComparisonBar.currentYearSeries,
+      },
+    ];
+  }, [analytics]);
+
+  const categoryBarOptions: ApexCharts.ApexOptions = {
+    chart: {
+      type: "bar",
+      height: 380,
+      fontFamily: "var(--font-prompt), sans-serif",
+      toolbar: { show: false },
+    },
+    plotOptions: {
+      bar: {
+        horizontal: false,
+        columnWidth: "55%",
+        borderRadius: 4,
+      },
+    },
+    dataLabels: {
+      enabled: false,
+    },
+    stroke: {
+      show: true,
+      width: 2,
+      colors: ["transparent"],
+    },
+    colors: ["#3b82f6", "#10b981"],
+    xaxis: {
+      categories: analytics?.categoryComparisonBar.categories || [],
+      labels: {
+        rotate: -25,
+        rotateAlways: true,
+        style: { colors: "#475569", fontSize: "11px", fontWeight: 500 },
+      },
+    },
+    yaxis: {
+      labels: {
+        formatter: (val) => `${formatCurrency(val)} ฿`,
+        style: { colors: "#64748b", fontSize: "11px" },
+      },
+    },
+    fill: {
+      opacity: 1,
+    },
+    legend: {
+      position: "top",
+      horizontalAlign: "right",
+      fontSize: "12px",
+    },
+    tooltip: {
+      y: {
+        formatter: (val) => `${formatCurrency(val)} บาท`,
+      },
+    },
+    grid: {
+      borderColor: "#f1f5f9",
+      strokeDashArray: 3,
+    },
+  };
+
+  // 3. Monthly Trend Options & Series
   const trendSeries = useMemo(() => {
     if (!analytics) return [];
     return [
@@ -233,7 +304,7 @@ export default function AnalyticsDashboard() {
 
   const trendOptions: ApexCharts.ApexOptions = {
     chart: {
-      height: 350,
+      height: 340,
       type: "line",
       fontFamily: "var(--font-prompt), sans-serif",
       toolbar: { show: false },
@@ -242,7 +313,7 @@ export default function AnalyticsDashboard() {
       width: [0, 3],
       curve: "smooth",
     },
-    colors: ["#3b82f6", "#10b981"],
+    colors: ["#6366f1", "#10b981"],
     plotOptions: {
       bar: {
         columnWidth: "45%",
@@ -265,7 +336,7 @@ export default function AnalyticsDashboard() {
       {
         title: {
           text: "ยอดเบิกจ่ายประจำเดือน (บาท)",
-          style: { color: "#3b82f6", fontSize: "11px" },
+          style: { color: "#6366f1", fontSize: "11px" },
         },
         labels: {
           formatter: (val) => `${formatCurrency(val)}`,
@@ -297,7 +368,7 @@ export default function AnalyticsDashboard() {
     },
   };
 
-  // 3. Category Donut Options & Series
+  // 4. Category Donut Options & Series
   const donutSeries = analytics?.categoryDonut.series || [];
   const donutOptions: ApexCharts.ApexOptions = {
     chart: {
@@ -319,7 +390,7 @@ export default function AnalyticsDashboard() {
             show: true,
             total: {
               show: true,
-              label: "งบประมาณรวม",
+              label: "ผลงานปีก่อนรวม",
               formatter: () => `${formatCurrency(analytics?.kpi.totalBudget || 0)} ฿`,
             },
           },
@@ -354,7 +425,7 @@ export default function AnalyticsDashboard() {
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                ระบบวิเคราะห์ผลการดำเนินงานและเปรียบเทียบผลงานปีนี้ vs ปีก่อน (Year-over-Year)
+                เปรียบเทียบผลงานหมวดหมู่กองทุนปีนี้ vs ปีก่อน (Year-over-Year Performance)
               </p>
             </div>
           </div>
@@ -410,7 +481,7 @@ export default function AnalyticsDashboard() {
             {/* Card 1: Total Budget */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-sm transition">
               <div className="flex items-center justify-between text-slate-500 text-xs">
-                <span>ผลงานปีก่อน 2568 (Baseline)</span>
+                <span>ผลงานปีก่อน 2568 (รวมทุกหมวด)</span>
                 <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
                   <Wallet className="w-4 h-4" />
                 </div>
@@ -418,7 +489,7 @@ export default function AnalyticsDashboard() {
               <div className="mt-2 text-2xl font-bold text-slate-900 font-mono tracking-tight">
                 {formatCurrency(analytics.kpi.totalBudget)} <span className="text-sm font-normal text-slate-500 font-prompt">บาท</span>
               </div>
-              <p className="text-xs text-slate-400 mt-1">จาก {analytics.kpi.totalItems} รายการโครงการ</p>
+              <p className="text-xs text-slate-400 mt-1">จาก {analytics.kpi.activeCategories} หมวดหมู่หลัก</p>
             </div>
 
             {/* Card 2: Total Spent */}
@@ -482,7 +553,7 @@ export default function AnalyticsDashboard() {
           </div>
         )}
 
-        {/* 2. Candlestick Chart Section (แท่งเทียนปีนี้ vs ปีก่อน) */}
+        {/* 2. Candlestick Chart Section (แท่งเทียนหมวดหมู่ปีนี้ vs ปีก่อน) */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-4 pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
@@ -491,9 +562,9 @@ export default function AnalyticsDashboard() {
               </div>
               <div>
                 <h2 className="text-base font-bold text-slate-900">
-                  กราฟแท่งเทียนเปรียบเทียบผลงาน: ปีนี้ vs ปีก่อน (Year-over-Year Candlestick)
+                  กราฟแท่งเทียนเปรียบเทียบผลงานหมวดหมู่: ปีนี้ vs ปีก่อน
                 </h2>
-                <p className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
+                <p className="text-xs text-slate-500 flex items-center flex-wrap gap-2 mt-0.5">
                   <span><strong>Open:</strong> ผลงานปีก่อน 68</span>
                   <span>•</span>
                   <span><strong>Close:</strong> ผลงานสะสมปีนี้</span>
@@ -505,7 +576,7 @@ export default function AnalyticsDashboard() {
               </div>
             </div>
 
-            {/* Drill-down Category Dropdown Filter */}
+            {/* Drill-down Category Filter */}
             {analytics && analytics.categories.length > 0 && (
               <div className="flex items-center gap-2">
                 <Filter className="w-4 h-4 text-slate-400" />
@@ -530,17 +601,42 @@ export default function AnalyticsDashboard() {
               options={candlestickOptions}
               series={candlestickSeries}
               type="candlestick"
-              height={420}
+              height={440}
             />
           </div>
         </div>
 
-        {/* 3. Grid Row: Monthly Spending Trend & Category Allocation */}
+        {/* 3. Double-Bar Comparison Chart (กราฟแท่งเปรียบเทียบเคียงข้าง) */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm">
+          <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-100">
+            <div className="p-2 bg-blue-50 text-blue-700 rounded-lg">
+              <BarChart2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">
+                กราฟแท่งเปรียบเทียบรายหมวดหมู่ (Side-by-Side Bar Comparison)
+              </h2>
+              <p className="text-xs text-slate-500">
+                เปรียบเทียบ ผลงานปีก่อน 68 (แท่งสีน้ำเงิน) กับ ยอดสะสมปีนี้ (แท่งสีเขียว)
+              </p>
+            </div>
+          </div>
+          <div className="w-full pt-2">
+            <Chart
+              options={categoryBarOptions}
+              series={categoryBarSeries}
+              type="bar"
+              height={380}
+            />
+          </div>
+        </div>
+
+        {/* 4. Grid Row: Monthly Spending Trend & Category Allocation */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Trend Chart (2 Cols) */}
           <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm">
             <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-100">
-              <div className="p-2 bg-blue-50 text-blue-700 rounded-lg">
+              <div className="p-2 bg-indigo-50 text-indigo-700 rounded-lg">
                 <BarChart3 className="w-5 h-5" />
               </div>
               <div>
@@ -548,7 +644,7 @@ export default function AnalyticsDashboard() {
                   แนวโน้มการเบิกจ่ายรายเดือนและยอดสะสม
                 </h2>
                 <p className="text-xs text-slate-500">
-                  เปรียบเทียบยอดเบิกจ่ายแต่ละเดือน (แท่งสีฟ้า) กับยอดสะสมรวม (เส้นสีเขียว)
+                  เปรียบเทียบยอดเบิกจ่ายแต่ละเดือน (แท่งสีม่วง) กับยอดสะสมรวม (เส้นสีเขียว)
                 </p>
               </div>
             </div>
@@ -576,13 +672,13 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* 4. Category Execution Progress Table */}
+        {/* 5. Category Execution Progress Table */}
         {analytics && analytics.categories.length > 0 && (
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-slate-900">
-                  สรุปผลการดำเนินงานและเปรียบเทียบรายหมวดหมู่กองทุน
+                  ตารางเปรียบเทียบผลงานรายหมวดหมู่กองทุน (Year-over-Year)
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   เปรียบเทียบผลงานปีก่อน 68 กับ ยอดเบิกจ่ายสะสมปีนี้
@@ -595,6 +691,7 @@ export default function AnalyticsDashboard() {
                 <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
                   <tr>
                     <th className="py-3 px-4">ชื่อหมวดหมู่กองทุน</th>
+                    <th className="py-3 px-4 text-center">แถวใน Sheet</th>
                     <th className="py-3 px-4 text-center">จำนวนโครงการ</th>
                     <th className="py-3 px-4 text-right">ผลงานปีก่อน 68 (บาท)</th>
                     <th className="py-3 px-4 text-right">สะสมปีนี้ (บาท)</th>
@@ -610,6 +707,9 @@ export default function AnalyticsDashboard() {
                       <tr key={idx} className="hover:bg-slate-50/60 transition">
                         <td className="py-3.5 px-4 font-medium text-slate-900">
                           {cat.name}
+                        </td>
+                        <td className="py-3.5 px-4 text-center font-mono text-slate-500">
+                          {cat.sheetRow ? `แถวที่ ${cat.sheetRow}` : "-"}
                         </td>
                         <td className="py-3.5 px-4 text-center text-slate-600 font-mono">
                           {cat.itemCount}
