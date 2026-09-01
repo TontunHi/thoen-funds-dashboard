@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ParsedSheetData, SheetApiResponse } from "@/types/sheet";
@@ -43,6 +43,7 @@ export default function AnalyticsDashboard() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [showEquationModal, setShowEquationModal] = useState<boolean>(false);
+  const isInitializedRef = useRef<boolean>(false);
 
   const fetchData = useCallback(async (manual = false) => {
     if (manual) setIsRefreshing(true);
@@ -69,12 +70,13 @@ export default function AnalyticsDashboard() {
     return computeAnalyticsData(sheetData);
   }, [sheetData]);
 
-  // Set default selected categories on load (all selected)
+  // Set default selected categories on initial load only once
   useEffect(() => {
-    if (analytics && analytics.categoryDetails.length > 0 && selectedCategories.length === 0) {
+    if (analytics && analytics.categoryDetails.length > 0 && !isInitializedRef.current) {
       setSelectedCategories(analytics.categoryDetails.map((c) => c.category));
+      isInitializedRef.current = true;
     }
-  }, [analytics, selectedCategories.length]);
+  }, [analytics]);
 
   const toggleCategory = (catName: string) => {
     setSelectedCategories((prev) =>
@@ -104,7 +106,6 @@ export default function AnalyticsDashboard() {
   // 1. Filtered Side-by-Side Comparison Bar Chart based on Selected Categories
   const filteredCategoryDetails = useMemo(() => {
     if (!analytics) return [];
-    if (selectedCategories.length === 0) return analytics.categoryDetails;
     return analytics.categoryDetails.filter((c) => selectedCategories.includes(c.category));
   }, [analytics, selectedCategories]);
 
@@ -147,7 +148,7 @@ export default function AnalyticsDashboard() {
     plotOptions: {
       bar: {
         horizontal: false,
-        columnWidth: filteredCategoryDetails.length <= 4 ? "35%" : "50%",
+        columnWidth: filteredCategoryDetails.length <= 3 ? "30%" : filteredCategoryDetails.length <= 6 ? "45%" : "55%",
         borderRadius: 6,
         borderRadiusApplication: "end",
       },
@@ -538,7 +539,7 @@ export default function AnalyticsDashboard() {
                   <span>•</span>
                   <span className="font-medium text-emerald-700">🟩 แท่งสีเขียว: ยอดสะสมปีนี้</span>
                   <span>•</span>
-                  <span>เลือกติ๊กหมวดหมู่ด้านล่างเพื่อเปรียบเทียบเฉพาะรายการที่ต้องการ</span>
+                  <span>เลือกติ๊กหมวดหมู่ด้านล่างเพื่อเปรียบเทียบเฉพาะรายการที่ต้องการ ({selectedCategories.length}/{analytics?.categoryDetails.length || 0} หมวด)</span>
                 </p>
               </div>
             </div>
@@ -546,14 +547,16 @@ export default function AnalyticsDashboard() {
             {/* Quick Actions (Select All / Clear) */}
             <div className="flex items-center gap-2 text-xs">
               <button
+                type="button"
                 onClick={selectAllCategories}
-                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition"
+                className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg font-medium transition cursor-pointer"
               >
                 เลือกทั้งหมด
               </button>
               <button
+                type="button"
                 onClick={clearAllCategories}
-                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition"
+                className="px-3 py-1.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 text-slate-700 border border-slate-200 rounded-lg font-medium transition cursor-pointer"
               >
                 ล้างการเลือก
               </button>
@@ -572,10 +575,11 @@ export default function AnalyticsDashboard() {
                 return (
                   <button
                     key={idx}
+                    type="button"
                     onClick={() => toggleCategory(cat.category)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer ${
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer select-none ${
                       isSelected
-                        ? "bg-blue-600 text-white shadow-2xs"
+                        ? "bg-blue-600 text-white shadow-2xs border border-blue-600"
                         : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
                     }`}
                   >
@@ -601,11 +605,14 @@ export default function AnalyticsDashboard() {
                 height={440}
               />
             ) : (
-              <div className="w-full h-80 flex flex-col items-center justify-center text-slate-400 text-sm">
-                <p>กรุณาเลือกอย่างน้อย 1 หมวดหมู่เพื่อแสดงผลกราฟเปรียบเทียบ</p>
+              <div className="w-full h-80 flex flex-col items-center justify-center text-slate-500 text-sm bg-slate-50/60 rounded-xl border border-dashed border-slate-200">
+                <Filter className="w-8 h-8 text-slate-300 mb-2" />
+                <p className="font-medium text-slate-600">ยังไม่ได้เลือกหมวดหมู่ใดเพื่อแสดงกราฟ</p>
+                <p className="text-xs text-slate-400 mt-0.5">กรุณาคลิกเลือกหมวดหมู่ที่ต้องการเปรียบเทียบจากรายการด้านบน</p>
                 <button
+                  type="button"
                   onClick={selectAllCategories}
-                  className="mt-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100 transition"
+                  className="mt-3 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 transition shadow-2xs cursor-pointer"
                 >
                   เลือกหมวดหมู่ทั้งหมด
                 </button>
@@ -635,8 +642,9 @@ export default function AnalyticsDashboard() {
 
               {/* Info Button for Equation */}
               <button
+                type="button"
                 onClick={() => setShowEquationModal(true)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-lg transition"
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-lg transition cursor-pointer"
                 title="ดูที่มาของข้อมูลและสมการคำนวณ"
               >
                 <HelpCircle className="w-3.5 h-3.5" />
@@ -741,8 +749,9 @@ export default function AnalyticsDashboard() {
                 ที่มาข้อมูลและสมการคำนวณกราฟแนวโน้มรายเดือน
               </h3>
               <button
+                type="button"
                 onClick={() => setShowEquationModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none cursor-pointer"
               >
                 ✕
               </button>
@@ -779,8 +788,9 @@ export default function AnalyticsDashboard() {
 
             <div className="pt-2 flex justify-end">
               <button
+                type="button"
                 onClick={() => setShowEquationModal(false)}
-                className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-medium text-xs transition"
+                className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-medium text-xs transition cursor-pointer"
               >
                 ปิดหน้าต่าง
               </button>
