@@ -19,7 +19,6 @@ import {
   Layers,
   ArrowUpRight,
   ArrowDownRight,
-  CandlestickChart,
   FileSpreadsheet,
   BarChart2,
   GitCompare,
@@ -30,7 +29,7 @@ const Chart = dynamic(() => import("react-apexcharts"), {
   ssr: false,
   loading: () => (
     <div className="w-full h-80 flex items-center justify-center bg-slate-50/50 rounded-xl animate-pulse">
-      <span className="text-xs text-slate-400">กำลังโหลดกราฟแท่งเทียน...</span>
+      <span className="text-xs text-slate-400">กำลังโหลดกราฟ...</span>
     </div>
   ),
 });
@@ -74,25 +73,25 @@ export default function AnalyticsDashboard() {
     }).format(val);
   };
 
-  // 1. Dual Candlestick Series (แท่งเทียนคู่กัน: ปีก่อน 68 vs ปีนี้)
-  const dualCandleSeries = useMemo(() => {
+  // 1. Solid Dual-Bar Comparison Chart (กราฟแท่งคู่ตัน ไม่มีไส้เทียน สไตล์ Modern Dashboard)
+  const categoryBarSeries = useMemo(() => {
     if (!analytics) return [];
     return [
       {
-        name: "แท่งที่ 1: ผลงานปีก่อน 68",
-        data: analytics.dualCandlestick.prevYearSeries,
+        name: "ผลงานปีก่อน 68 (Baseline)",
+        data: analytics.categoryComparisonBar.prevYearSeries,
       },
       {
-        name: "แท่งที่ 2: ยอดสะสมปีนี้",
-        data: analytics.dualCandlestick.currentYearSeries,
+        name: "ยอดสะสมปีนี้ (Actual)",
+        data: analytics.categoryComparisonBar.currentYearSeries,
       },
     ];
   }, [analytics]);
 
-  const dualCandleOptions: ApexCharts.ApexOptions = {
+  const categoryBarOptions: ApexCharts.ApexOptions = {
     chart: {
-      type: "candlestick",
-      height: 460,
+      type: "bar",
+      height: 440,
       fontFamily: "var(--font-prompt), sans-serif",
       toolbar: {
         show: true,
@@ -109,22 +108,41 @@ export default function AnalyticsDashboard() {
       animations: {
         enabled: true,
         easing: "easeinout",
-        speed: 600,
+        speed: 700,
       },
     },
     plotOptions: {
-      candlestick: {
-        colors: {
-          upward: "#10b981", // เขียว: เติบโต
-          downward: "#ef4444", // แดง: ต่ำกว่า
-        },
-        wick: {
-          useFillColor: true,
+      bar: {
+        horizontal: false,
+        columnWidth: "50%",
+        borderRadius: 6,
+        borderRadiusApplication: "end",
+        dataLabels: {
+          position: "top",
         },
       },
     },
-    legend: {
+    dataLabels: {
+      enabled: false,
+    },
+    stroke: {
       show: true,
+      width: 2,
+      colors: ["transparent"],
+    },
+    colors: ["#3b82f6", "#10b981"], // แท่งน้ำเงิน vs แท่งเขียวมรกต
+    fill: {
+      opacity: 0.95,
+      type: "gradient",
+      gradient: {
+        shade: "light",
+        type: "vertical",
+        shadeIntensity: 0.2,
+        opacityFrom: 0.95,
+        opacityTo: 0.85,
+      },
+    },
+    legend: {
       position: "top",
       horizontalAlign: "right",
       fontSize: "12px",
@@ -134,7 +152,7 @@ export default function AnalyticsDashboard() {
       },
     },
     xaxis: {
-      type: "category",
+      categories: analytics?.categoryComparisonBar.categories || [],
       labels: {
         rotate: -25,
         rotateAlways: true,
@@ -151,36 +169,31 @@ export default function AnalyticsDashboard() {
       },
     },
     yaxis: {
-      tooltip: {
-        enabled: true,
-      },
       labels: {
+        formatter: (val) => `${formatCurrency(val)} ฿`,
         style: {
           colors: "#64748b",
           fontSize: "11px",
         },
-        formatter: (val) => `${formatCurrency(val)} ฿`,
       },
     },
     tooltip: {
       shared: true,
+      intersect: false,
       custom: ({ series, seriesIndex, dataPointIndex, w }) => {
-        const catName = w.globals.categoryLabels[dataPointIndex];
-        const prevO = w.globals.seriesCandleO[0]?.[dataPointIndex] || 0;
-        const prevC = w.globals.seriesCandleC[0]?.[dataPointIndex] || 0;
-        const currO = w.globals.seriesCandleO[1]?.[dataPointIndex] || 0;
-        const currC = w.globals.seriesCandleC[1]?.[dataPointIndex] || 0;
-
-        const diff = currC - prevC;
-        const pct = prevC > 0 ? Math.round((diff / prevC) * 1000) / 10 : 0;
-        const isGrowth = currC >= prevC;
+        const catName = analytics?.categoryDetails[dataPointIndex]?.category || w.globals.categoryLabels[dataPointIndex];
+        const prev = series[0]?.[dataPointIndex] || 0;
+        const curr = series[1]?.[dataPointIndex] || 0;
+        const diff = curr - prev;
+        const pct = prev > 0 ? Math.round((diff / prev) * 1000) / 10 : curr > 0 ? 100 : 0;
+        const isGrowth = curr >= prev;
 
         return `
           <div style="padding: 14px 16px; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.12); font-family: var(--font-prompt), sans-serif; font-size: 12px; color: #1e293b; min-width: 280px;">
             <div style="font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 8px; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px;">
               ${catName}
             </div>
-            <div style="margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; background: ${isGrowth ? "#ecfdf5" : "#fef2f2"}; padding: 6px 10px; border-radius: 6px;">
+            <div style="margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; background: ${isGrowth ? "#ecfdf5" : "#fef2f2"}; padding: 6px 10px; border-radius: 6px;">
               <span style="font-weight: 600; color: ${isGrowth ? "#065f46" : "#991b1b"}; font-size: 11px;">
                 ${isGrowth ? "▲ ผลงานปีนี้เติบโตกว่าปีก่อน" : "▼ ผลงานปีนี้ยังตามหลังปีก่อน"}
               </span>
@@ -191,11 +204,11 @@ export default function AnalyticsDashboard() {
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px;">
               <div style="background: #eff6ff; padding: 8px; border-radius: 8px; border: 1px solid #dbeafe;">
                 <div style="font-weight: 600; color: #1d4ed8; margin-bottom: 2px;">แท่งซ้าย (ปีก่อน 68)</div>
-                <div style="color: #64748b;">ผลงาน: <strong style="color: #1e40af; font-family: monospace;">${formatCurrency(prevC)} ฿</strong></div>
+                <strong style="color: #1e40af; font-family: monospace; font-size: 13px;">${formatCurrency(prev)} ฿</strong>
               </div>
               <div style="background: #f0fdf4; padding: 8px; border-radius: 8px; border: 1px solid #dcfce7;">
                 <div style="font-weight: 600; color: #15803d; margin-bottom: 2px;">แท่งขวา (สะสมปีนี้)</div>
-                <div style="color: #64748b;">ผลงาน: <strong style="color: #166534; font-family: monospace;">${formatCurrency(currC)} ฿</strong></div>
+                <strong style="color: ${isGrowth ? "#166534" : "#dc2626"}; font-family: monospace; font-size: 13px;">${formatCurrency(curr)} ฿</strong>
               </div>
             </div>
           </div>
@@ -208,78 +221,7 @@ export default function AnalyticsDashboard() {
     },
   };
 
-  // 2. Category Side-by-Side Double Bar Chart
-  const categoryBarSeries = useMemo(() => {
-    if (!analytics) return [];
-    return [
-      {
-        name: "ผลงานปีก่อน 68 (บาท)",
-        data: analytics.categoryComparisonBar.prevYearSeries,
-      },
-      {
-        name: "ยอดสะสมปีนี้ (บาท)",
-        data: analytics.categoryComparisonBar.currentYearSeries,
-      },
-    ];
-  }, [analytics]);
-
-  const categoryBarOptions: ApexCharts.ApexOptions = {
-    chart: {
-      type: "bar",
-      height: 380,
-      fontFamily: "var(--font-prompt), sans-serif",
-      toolbar: { show: false },
-    },
-    plotOptions: {
-      bar: {
-        horizontal: false,
-        columnWidth: "55%",
-        borderRadius: 4,
-      },
-    },
-    dataLabels: {
-      enabled: false,
-    },
-    stroke: {
-      show: true,
-      width: 2,
-      colors: ["transparent"],
-    },
-    colors: ["#3b82f6", "#10b981"],
-    xaxis: {
-      categories: analytics?.categoryComparisonBar.categories || [],
-      labels: {
-        rotate: -25,
-        rotateAlways: true,
-        style: { colors: "#475569", fontSize: "11px", fontWeight: 500 },
-      },
-    },
-    yaxis: {
-      labels: {
-        formatter: (val) => `${formatCurrency(val)} ฿`,
-        style: { colors: "#64748b", fontSize: "11px" },
-      },
-    },
-    fill: {
-      opacity: 1,
-    },
-    legend: {
-      position: "top",
-      horizontalAlign: "right",
-      fontSize: "12px",
-    },
-    tooltip: {
-      y: {
-        formatter: (val) => `${formatCurrency(val)} บาท`,
-      },
-    },
-    grid: {
-      borderColor: "#f1f5f9",
-      strokeDashArray: 3,
-    },
-  };
-
-  // 3. Monthly Trend Options & Series
+  // 2. Monthly Spending Trend Options & Series
   const trendSeries = useMemo(() => {
     if (!analytics) return [];
     return [
@@ -298,7 +240,7 @@ export default function AnalyticsDashboard() {
 
   const trendOptions: ApexCharts.ApexOptions = {
     chart: {
-      height: 340,
+      height: 350,
       type: "line",
       fontFamily: "var(--font-prompt), sans-serif",
       toolbar: { show: false },
@@ -307,15 +249,15 @@ export default function AnalyticsDashboard() {
       width: [0, 3],
       curve: "smooth",
     },
-    colors: ["#6366f1", "#10b981"],
+    colors: ["#3b82f6", "#10b981"],
     plotOptions: {
       bar: {
         columnWidth: "45%",
-        borderRadius: 4,
+        borderRadius: 5,
       },
     },
     fill: {
-      opacity: [0.85, 1],
+      opacity: [0.9, 1],
     },
     labels: analytics?.monthlyTrend.months || [],
     markers: {
@@ -330,7 +272,7 @@ export default function AnalyticsDashboard() {
       {
         title: {
           text: "ยอดเบิกจ่ายประจำเดือน (บาท)",
-          style: { color: "#6366f1", fontSize: "11px" },
+          style: { color: "#3b82f6", fontSize: "11px" },
         },
         labels: {
           formatter: (val) => `${formatCurrency(val)}`,
@@ -362,7 +304,7 @@ export default function AnalyticsDashboard() {
     },
   };
 
-  // 4. Category Donut Options & Series
+  // 3. Category Donut Options & Series
   const donutSeries = analytics?.categoryDonut.series || [];
   const donutOptions: ApexCharts.ApexOptions = {
     chart: {
@@ -419,7 +361,7 @@ export default function AnalyticsDashboard() {
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                ระบบวิเคราะห์ผลงานแบบแท่งเทียนคู่ (Dual Candlestick Comparison)
+                ระบบวิเคราะห์ผลงานหมวดหมู่กองทุนเปรียบเทียบปีนี้ vs ปีก่อน (Side-by-Side Comparison)
               </p>
             </div>
           </div>
@@ -547,23 +489,23 @@ export default function AnalyticsDashboard() {
           </div>
         )}
 
-        {/* 2. Dual Candlestick Chart Section (แท่งเทียนคู่กัน) */}
+        {/* 2. Main Executive Comparison Bar Chart (กราฟแท่งคู่เปรียบเทียบเคียงข้าง ไม่มีไส้เทียน) */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-4 pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-emerald-50 text-emerald-700 rounded-lg">
-                <GitCompare className="w-5 h-5" />
+              <div className="p-2 bg-blue-50 text-blue-700 rounded-lg">
+                <BarChart2 className="w-5 h-5" />
               </div>
               <div>
                 <h2 className="text-base font-bold text-slate-900">
-                  กราฟแท่งเทียนคู่เปรียบเทียบเคียงข้าง (Dual Candlesticks Comparison)
+                  กราฟแท่งเปรียบเทียบผลงานหมวดหมู่: ปีนี้ vs ปีก่อน (Side-by-Side Comparison)
                 </h2>
                 <p className="text-xs text-slate-500 flex items-center flex-wrap gap-2 mt-0.5">
-                  <span className="font-medium text-blue-700">🕯️ แท่งซ้าย: ผลงานปีก่อน 68</span>
+                  <span className="font-medium text-blue-700">🟦 แท่งสีน้ำเงิน: ผลงานปีก่อน 68</span>
                   <span>•</span>
-                  <span className="font-medium text-emerald-700">🕯️ แท่งขวา: ยอดสะสมปีนี้</span>
+                  <span className="font-medium text-emerald-700">🟩 แท่งสีเขียว: ยอดสะสมปีนี้</span>
                   <span>•</span>
-                  <span>เปรียบเทียบขนาด ความสูง และการกระจายตัวของทั้งสองปีคู่กันในแต่ละหมวด</span>
+                  <span>แสดงแท่งคู่ทึบแบบไม่มีไส้เทียน เปรียบเทียบผลงานชัดเจนในทุกหมวด</span>
                 </p>
               </div>
             </div>
@@ -571,45 +513,20 @@ export default function AnalyticsDashboard() {
 
           <div className="w-full pt-2">
             <Chart
-              options={dualCandleOptions}
-              series={dualCandleSeries}
-              type="candlestick"
-              height={460}
-            />
-          </div>
-        </div>
-
-        {/* 3. Double-Bar Comparison Chart (กราฟแท่งเปรียบเทียบเคียงข้าง) */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm">
-          <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-100">
-            <div className="p-2 bg-blue-50 text-blue-700 rounded-lg">
-              <BarChart2 className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-slate-900">
-                กราฟแท่งคู่เปรียบเทียบรายหมวดหมู่ (Side-by-Side Double Bar Chart)
-              </h2>
-              <p className="text-xs text-slate-500">
-                เปรียบเทียบ ผลงานปีก่อน 68 (แท่งสีน้ำเงิน) กับ ยอดสะสมปีนี้ (แท่งสีเขียว)
-              </p>
-            </div>
-          </div>
-          <div className="w-full pt-2">
-            <Chart
               options={categoryBarOptions}
               series={categoryBarSeries}
               type="bar"
-              height={380}
+              height={440}
             />
           </div>
         </div>
 
-        {/* 4. Grid Row: Monthly Spending Trend & Category Allocation */}
+        {/* 3. Grid Row: Monthly Spending Trend & Category Allocation */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Trend Chart (2 Cols) */}
           <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm">
             <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-100">
-              <div className="p-2 bg-indigo-50 text-indigo-700 rounded-lg">
+              <div className="p-2 bg-blue-50 text-blue-700 rounded-lg">
                 <BarChart3 className="w-5 h-5" />
               </div>
               <div>
@@ -617,12 +534,12 @@ export default function AnalyticsDashboard() {
                   แนวโน้มการเบิกจ่ายรายเดือนและยอดสะสม
                 </h2>
                 <p className="text-xs text-slate-500">
-                  เปรียบเทียบยอดเบิกจ่ายแต่ละเดือน (แท่งสีม่วง) กับยอดสะสมรวม (เส้นสีเขียว)
+                  เปรียบเทียบยอดเบิกจ่ายแต่ละเดือน (แท่งสีฟ้า) กับยอดสะสมรวม (เส้นสีเขียว)
                 </p>
               </div>
             </div>
             <div className="w-full pt-2">
-              <Chart options={trendOptions} series={trendSeries} type="line" height={340} />
+              <Chart options={trendOptions} series={trendSeries} type="line" height={350} />
             </div>
           </div>
 
@@ -640,12 +557,12 @@ export default function AnalyticsDashboard() {
               </div>
             </div>
             <div className="w-full pt-2">
-              <Chart options={donutOptions} series={donutSeries} type="donut" height={340} />
+              <Chart options={donutOptions} series={donutSeries} type="donut" height={350} />
             </div>
           </div>
         </div>
 
-        {/* 5. Category Execution Progress Table */}
+        {/* 4. Category Execution Progress Table */}
         {analytics && analytics.categoryDetails.length > 0 && (
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
