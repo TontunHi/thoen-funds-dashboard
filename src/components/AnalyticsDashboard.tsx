@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ParsedSheetData, SheetApiResponse } from "@/types/sheet";
 import { SHEET_CONFIG } from "@/config/sheet.config";
-import { computeAnalyticsData, AnalyticsData, CandlestickPoint } from "@/lib/analytics-parser";
+import { computeAnalyticsData, AnalyticsData } from "@/lib/analytics-parser";
 import {
   RefreshCw,
   ExternalLink,
@@ -20,11 +20,9 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   CandlestickChart,
-  Filter,
   FileSpreadsheet,
-  CheckCircle2,
-  HelpCircle,
   BarChart2,
+  GitCompare,
 } from "lucide-react";
 
 // Dynamically import react-apexcharts to prevent SSR window reference error
@@ -32,7 +30,7 @@ const Chart = dynamic(() => import("react-apexcharts"), {
   ssr: false,
   loading: () => (
     <div className="w-full h-80 flex items-center justify-center bg-slate-50/50 rounded-xl animate-pulse">
-      <span className="text-xs text-slate-400">กำลังโหลดกราฟ...</span>
+      <span className="text-xs text-slate-400">กำลังโหลดกราฟแท่งเทียน...</span>
     </div>
   ),
 });
@@ -41,7 +39,6 @@ export default function AnalyticsDashboard() {
   const [sheetData, setSheetData] = useState<ParsedSheetData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
 
   const fetchData = useCallback(async (manual = false) => {
     if (manual) setIsRefreshing(true);
@@ -77,32 +74,25 @@ export default function AnalyticsDashboard() {
     }).format(val);
   };
 
-  // 1. Active Candlestick Points (All Categories or Specific Project Drilldown)
-  const activeCandleData: CandlestickPoint[] = useMemo(() => {
+  // 1. Dual Candlestick Series (แท่งเทียนคู่กัน: ปีก่อน 68 vs ปีนี้)
+  const dualCandleSeries = useMemo(() => {
     if (!analytics) return [];
-    if (selectedCategory === "ALL") {
-      return analytics.categoryCandlesticks;
-    }
-    const cat = analytics.categories.find((c) => c.name === selectedCategory);
-    if (cat && cat.projectCandles.length > 0) {
-      return cat.projectCandles.map((p) => p.candle);
-    }
-    return analytics.categoryCandlesticks;
-  }, [analytics, selectedCategory]);
-
-  const candlestickSeries = useMemo(() => {
     return [
       {
-        name: "เปรียบเทียบผลงานปีนี้ vs ปีก่อน",
-        data: activeCandleData,
+        name: "แท่งที่ 1: ผลงานปีก่อน 68",
+        data: analytics.dualCandlestick.prevYearSeries,
+      },
+      {
+        name: "แท่งที่ 2: ยอดสะสมปีนี้",
+        data: analytics.dualCandlestick.currentYearSeries,
       },
     ];
-  }, [activeCandleData]);
+  }, [analytics]);
 
-  const candlestickOptions: ApexCharts.ApexOptions = {
+  const dualCandleOptions: ApexCharts.ApexOptions = {
     chart: {
       type: "candlestick",
-      height: 440,
+      height: 460,
       fontFamily: "var(--font-prompt), sans-serif",
       toolbar: {
         show: true,
@@ -125,19 +115,29 @@ export default function AnalyticsDashboard() {
     plotOptions: {
       candlestick: {
         colors: {
-          upward: "#10b981", // Green: ปีนี้ > ปีก่อน
-          downward: "#ef4444", // Red: ปีนี้ < ปีก่อน
+          upward: "#10b981", // เขียว: เติบโต
+          downward: "#ef4444", // แดง: ต่ำกว่า
         },
         wick: {
           useFillColor: true,
         },
       },
     },
+    legend: {
+      show: true,
+      position: "top",
+      horizontalAlign: "right",
+      fontSize: "12px",
+      fontWeight: 500,
+      markers: {
+        size: 7,
+      },
+    },
     xaxis: {
       type: "category",
       labels: {
         rotate: -25,
-        rotateAlways: activeCandleData.length > 3,
+        rotateAlways: true,
         trim: true,
         maxHeight: 120,
         style: {
@@ -163,45 +163,39 @@ export default function AnalyticsDashboard() {
       },
     },
     tooltip: {
-      custom: ({ seriesIndex, dataPointIndex, w }) => {
-        const item = activeCandleData[dataPointIndex];
-        const categoryName = item ? item.x : w.globals.categoryLabels[dataPointIndex];
-        const prev = item ? item.prevYearBudget : w.globals.seriesCandleO[seriesIndex][dataPointIndex];
-        const curr = item ? item.currentYearSpent : w.globals.seriesCandleC[seriesIndex][dataPointIndex];
-        const high = item ? item.y[1] : w.globals.seriesCandleH[seriesIndex][dataPointIndex];
-        const low = item ? item.y[2] : w.globals.seriesCandleL[seriesIndex][dataPointIndex];
-        const pct = item ? item.changePercent : prev > 0 ? Math.round(((curr - prev) / prev) * 1000) / 10 : 0;
-        const isGrowth = curr >= prev;
+      shared: true,
+      custom: ({ series, seriesIndex, dataPointIndex, w }) => {
+        const catName = w.globals.categoryLabels[dataPointIndex];
+        const prevO = w.globals.seriesCandleO[0]?.[dataPointIndex] || 0;
+        const prevC = w.globals.seriesCandleC[0]?.[dataPointIndex] || 0;
+        const currO = w.globals.seriesCandleO[1]?.[dataPointIndex] || 0;
+        const currC = w.globals.seriesCandleC[1]?.[dataPointIndex] || 0;
+
+        const diff = currC - prevC;
+        const pct = prevC > 0 ? Math.round((diff / prevC) * 1000) / 10 : 0;
+        const isGrowth = currC >= prevC;
 
         return `
-          <div style="padding: 14px 16px; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); font-family: var(--font-prompt), sans-serif; font-size: 12px; color: #1e293b; min-width: 260px;">
+          <div style="padding: 14px 16px; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.12); font-family: var(--font-prompt), sans-serif; font-size: 12px; color: #1e293b; min-width: 280px;">
             <div style="font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 8px; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px;">
-              ${categoryName}
+              ${catName}
             </div>
             <div style="margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; background: ${isGrowth ? "#ecfdf5" : "#fef2f2"}; padding: 6px 10px; border-radius: 6px;">
               <span style="font-weight: 600; color: ${isGrowth ? "#065f46" : "#991b1b"}; font-size: 11px;">
-                ${isGrowth ? "▲ ผลงานเติบโตขึ้น (ปีนี้ > ปีก่อน)" : "▼ ยังตามหลัง (ปีนี้ < ปีก่อน)"}
+                ${isGrowth ? "▲ ผลงานปีนี้เติบโตกว่าปีก่อน" : "▼ ผลงานปีนี้ยังตามหลังปีก่อน"}
               </span>
               <strong style="color: ${isGrowth ? "#059669" : "#dc2626"}; font-family: monospace; font-size: 12px;">
                 ${pct > 0 ? "+" : ""}${pct}%
               </strong>
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px;">
-              <div style="background: #f8fafc; padding: 6px 8px; border-radius: 6px; border: 1px solid #f1f5f9;">
-                <div style="color: #64748b;">ผลงานปีก่อน 68 (Open)</div>
-                <strong style="color: #3b82f6; font-family: monospace; font-size: 12px;">${formatCurrency(prev)} ฿</strong>
+              <div style="background: #eff6ff; padding: 8px; border-radius: 8px; border: 1px solid #dbeafe;">
+                <div style="font-weight: 600; color: #1d4ed8; margin-bottom: 2px;">แท่งซ้าย (ปีก่อน 68)</div>
+                <div style="color: #64748b;">ผลงาน: <strong style="color: #1e40af; font-family: monospace;">${formatCurrency(prevC)} ฿</strong></div>
               </div>
-              <div style="background: #f8fafc; padding: 6px 8px; border-radius: 6px; border: 1px solid #f1f5f9;">
-                <div style="color: #64748b;">สะสมปีนี้ (Close)</div>
-                <strong style="color: ${isGrowth ? "#10b981" : "#ef4444"}; font-family: monospace; font-size: 12px;">${formatCurrency(curr)} ฿</strong>
-              </div>
-              <div style="background: #f8fafc; padding: 6px 8px; border-radius: 6px; border: 1px solid #f1f5f9;">
-                <div style="color: #64748b;">ยอดสูงสุด (High)</div>
-                <strong style="color: #475569; font-family: monospace;">${formatCurrency(high)} ฿</strong>
-              </div>
-              <div style="background: #f8fafc; padding: 6px 8px; border-radius: 6px; border: 1px solid #f1f5f9;">
-                <div style="color: #64748b;">ยอดต่ำสุด (Low)</div>
-                <strong style="color: #475569; font-family: monospace;">${formatCurrency(low)} ฿</strong>
+              <div style="background: #f0fdf4; padding: 8px; border-radius: 8px; border: 1px solid #dcfce7;">
+                <div style="font-weight: 600; color: #15803d; margin-bottom: 2px;">แท่งขวา (สะสมปีนี้)</div>
+                <div style="color: #64748b;">ผลงาน: <strong style="color: #166534; font-family: monospace;">${formatCurrency(currC)} ฿</strong></div>
               </div>
             </div>
           </div>
@@ -214,7 +208,7 @@ export default function AnalyticsDashboard() {
     },
   };
 
-  // 2. Category Side-by-Side Double Bar Chart (เปรียบเทียบเคียงข้าง)
+  // 2. Category Side-by-Side Double Bar Chart
   const categoryBarSeries = useMemo(() => {
     if (!analytics) return [];
     return [
@@ -425,7 +419,7 @@ export default function AnalyticsDashboard() {
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                เปรียบเทียบผลงานหมวดหมู่กองทุนปีนี้ vs ปีก่อน (Year-over-Year Performance)
+                ระบบวิเคราะห์ผลงานแบบแท่งเทียนคู่ (Dual Candlestick Comparison)
               </p>
             </div>
           </div>
@@ -553,55 +547,34 @@ export default function AnalyticsDashboard() {
           </div>
         )}
 
-        {/* 2. Candlestick Chart Section (แท่งเทียนหมวดหมู่ปีนี้ vs ปีก่อน) */}
+        {/* 2. Dual Candlestick Chart Section (แท่งเทียนคู่กัน) */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-4 pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
               <div className="p-2 bg-emerald-50 text-emerald-700 rounded-lg">
-                <CandlestickChart className="w-5 h-5" />
+                <GitCompare className="w-5 h-5" />
               </div>
               <div>
                 <h2 className="text-base font-bold text-slate-900">
-                  กราฟแท่งเทียนเปรียบเทียบผลงานหมวดหมู่: ปีนี้ vs ปีก่อน
+                  กราฟแท่งเทียนคู่เปรียบเทียบเคียงข้าง (Dual Candlesticks Comparison)
                 </h2>
                 <p className="text-xs text-slate-500 flex items-center flex-wrap gap-2 mt-0.5">
-                  <span><strong>Open:</strong> ผลงานปีก่อน 68</span>
+                  <span className="font-medium text-blue-700">🕯️ แท่งซ้าย: ผลงานปีก่อน 68</span>
                   <span>•</span>
-                  <span><strong>Close:</strong> ผลงานสะสมปีนี้</span>
+                  <span className="font-medium text-emerald-700">🕯️ แท่งขวา: ยอดสะสมปีนี้</span>
                   <span>•</span>
-                  <span className="text-emerald-700 font-medium">🟩 เขียว = ผลงานปีนี้เติบโตกว่าปีก่อน</span>
-                  <span>•</span>
-                  <span className="text-rose-700 font-medium">🟥 แดง = ผลงานปีนี้ยังตามหลัง</span>
+                  <span>เปรียบเทียบขนาด ความสูง และการกระจายตัวของทั้งสองปีคู่กันในแต่ละหมวด</span>
                 </p>
               </div>
             </div>
-
-            {/* Drill-down Category Filter */}
-            {analytics && analytics.categories.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-slate-400" />
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="px-3 py-1.5 bg-slate-50 hover:bg-white text-xs font-medium text-slate-700 border border-slate-200 rounded-lg shadow-2xs focus:border-blue-400 focus:outline-hidden transition"
-                >
-                  <option value="ALL">📊 ภาพรวมทุกหมวดหมู่ ({analytics.categories.length} หมวด)</option>
-                  {analytics.categories.map((cat, idx) => (
-                    <option key={idx} value={cat.name}>
-                      🏷️ {cat.name} ({cat.itemCount} โครงการ)
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
           </div>
 
           <div className="w-full pt-2">
             <Chart
-              options={candlestickOptions}
-              series={candlestickSeries}
+              options={dualCandleOptions}
+              series={dualCandleSeries}
               type="candlestick"
-              height={440}
+              height={460}
             />
           </div>
         </div>
@@ -614,7 +587,7 @@ export default function AnalyticsDashboard() {
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900">
-                กราฟแท่งเปรียบเทียบรายหมวดหมู่ (Side-by-Side Bar Comparison)
+                กราฟแท่งคู่เปรียบเทียบรายหมวดหมู่ (Side-by-Side Double Bar Chart)
               </h2>
               <p className="text-xs text-slate-500">
                 เปรียบเทียบ ผลงานปีก่อน 68 (แท่งสีน้ำเงิน) กับ ยอดสะสมปีนี้ (แท่งสีเขียว)
@@ -673,12 +646,12 @@ export default function AnalyticsDashboard() {
         </div>
 
         {/* 5. Category Execution Progress Table */}
-        {analytics && analytics.categories.length > 0 && (
+        {analytics && analytics.categoryDetails.length > 0 && (
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-slate-900">
-                  ตารางเปรียบเทียบผลงานรายหมวดหมู่กองทุน (Year-over-Year)
+                  ตารางเปรียบเทียบผลงานรายหมวดหมู่กองทุน (Year-over-Year Summary)
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   เปรียบเทียบผลงานปีก่อน 68 กับ ยอดเบิกจ่ายสะสมปีนี้
@@ -699,14 +672,13 @@ export default function AnalyticsDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {analytics.categories.map((cat, idx) => {
-                    const isGrowth = cat.spent >= cat.budget;
-                    const change = cat.budget > 0 ? Math.round(((cat.spent - cat.budget) / cat.budget) * 1000) / 10 : 0;
+                  {analytics.categoryDetails.map((cat, idx) => {
+                    const isGrowth = cat.currentYearSpent >= cat.prevYearBudget;
 
                     return (
                       <tr key={idx} className="hover:bg-slate-50/60 transition">
                         <td className="py-3.5 px-4 font-medium text-slate-900">
-                          {cat.name}
+                          {cat.category}
                         </td>
                         <td className="py-3.5 px-4 text-center font-mono text-slate-500">
                           {cat.sheetRow ? `แถวที่ ${cat.sheetRow}` : "-"}
@@ -715,10 +687,10 @@ export default function AnalyticsDashboard() {
                           {cat.itemCount}
                         </td>
                         <td className="py-3.5 px-4 text-right font-mono font-medium text-slate-800">
-                          {formatCurrency(cat.budget)} ฿
+                          {formatCurrency(cat.prevYearBudget)} ฿
                         </td>
                         <td className="py-3.5 px-4 text-right font-mono font-medium text-slate-900">
-                          {formatCurrency(cat.spent)} ฿
+                          {formatCurrency(cat.currentYearSpent)} ฿
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           <span
@@ -728,7 +700,7 @@ export default function AnalyticsDashboard() {
                                 : "bg-rose-50 text-rose-700 border border-rose-200"
                             }`}
                           >
-                            {isGrowth ? "+" : ""}{change}%
+                            {isGrowth ? "+" : ""}{cat.changePercent}%
                           </span>
                         </td>
                       </tr>

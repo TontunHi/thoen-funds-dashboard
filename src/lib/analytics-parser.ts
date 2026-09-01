@@ -1,29 +1,20 @@
 import { ParsedSheetData } from "@/types/sheet";
 
-export interface CandlestickPoint {
+export interface DualCandlestickPoint {
   x: string;
-  y: [number, number, number, number]; // [Open: ปีก่อน 68, High: สูงสุด, Low: ต่ำสุด, Close: สะสมปีนี้]
+  y: [number, number, number, number]; // [Open, High, Low, Close]
+  amount: number;
+}
+
+export interface DualCandleCategory {
+  category: string;
+  prevYearCandle: DualCandlestickPoint;
+  currentYearCandle: DualCandlestickPoint;
   prevYearBudget: number;
   currentYearSpent: number;
   changePercent: number;
-  volume?: number;
-}
-
-export interface ProjectCandleItem {
-  name: string;
-  category: string;
-  candle: CandlestickPoint;
-}
-
-export interface CategorySummary {
-  name: string;
-  sheetRow?: number;
-  budget: number; // ผลงานปีก่อน 68
-  spent: number; // รวมสะสมปีนี้
-  percentage: number;
   itemCount: number;
-  candle: CandlestickPoint;
-  projectCandles: ProjectCandleItem[];
+  sheetRow?: number;
 }
 
 export interface AnalyticsData {
@@ -37,7 +28,11 @@ export interface AnalyticsData {
     activeCategories: number;
     totalItems: number;
   };
-  categoryCandlesticks: CandlestickPoint[];
+  dualCandlestick: {
+    categories: string[];
+    prevYearSeries: DualCandlestickPoint[];
+    currentYearSeries: DualCandlestickPoint[];
+  };
   categoryComparisonBar: {
     categories: string[];
     prevYearSeries: number[];
@@ -52,7 +47,7 @@ export interface AnalyticsData {
     labels: string[];
     series: number[];
   };
-  categories: CategorySummary[];
+  categoryDetails: DualCandleCategory[];
 }
 
 const MONTH_NAMES = [
@@ -77,47 +72,6 @@ function parseNumeric(val?: string): number {
   return isNaN(num) ? 0 : num;
 }
 
-function createCandlePoint(
-  label: string,
-  prevBudget: number,
-  currSpent: number,
-  monthlyVals: number[] = []
-): CandlestickPoint {
-  const open = Math.round(prevBudget);
-  const close = Math.round(currSpent);
-
-  let high = Math.max(open, close);
-  let low = Math.min(open, close);
-
-  // Add realistic candle wick boundaries
-  if (high > 0) {
-    high = Math.round(high * 1.08); // 8% upper wick
-  }
-  if (low > 0) {
-    low = Math.round(low * 0.92); // 8% lower wick
-  } else if (high > 0) {
-    low = 0;
-  }
-
-  // If open and close are both zero
-  if (open === 0 && close === 0) {
-    high = 0;
-    low = 0;
-  }
-
-  const diff = currSpent - prevBudget;
-  const changePercent = prevBudget > 0 ? Math.round((diff / prevBudget) * 1000) / 10 : currSpent > 0 ? 100 : 0;
-
-  return {
-    x: label,
-    y: [open, high, low, close],
-    prevYearBudget: open,
-    currentYearSpent: close,
-    changePercent,
-    volume: close,
-  };
-}
-
 export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData {
   const rows = sheetData.rows;
   if (!rows || rows.length <= 2) {
@@ -126,10 +80,16 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
 
   const dataRows = rows.slice(2);
 
-  const categoriesList: CategorySummary[] = [];
-  let currentCategorySummary: CategorySummary | null = null;
-  const monthlyTotals: number[] = new Array(12).fill(0);
+  const categoryList: DualCandleCategory[] = [];
+  let currentCategory: {
+    name: string;
+    sheetRow?: number;
+    budget: number;
+    spent: number;
+    items: { name: string; budget: number; spent: number; monthly: number[] }[];
+  } | null = null;
 
+  const monthlyTotals: number[] = new Array(12).fill(0);
   let grandTotalBudget = 0;
   let grandTotalSpent = 0;
   let totalItemsCount = 0;
@@ -141,7 +101,6 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
 
     if (!firstCellText) continue;
 
-    // Check if this row is a major category header
     const isMergedCategory =
       (firstCell.colSpan >= 3 && firstCell.style.bold) ||
       (firstCell.style.bold && !parseNumeric(firstCellText) && rawCells[1]?.formattedValue !== undefined);
@@ -150,25 +109,17 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
     const spentVal = parseNumeric(rawCells[2]?.formattedValue); // รวมสะสมปีนี้
 
     if (isMergedCategory || (firstCell.style.bold && (budgetVal > 0 || spentVal > 0))) {
-      // Save previous category if exists
-      if (currentCategorySummary) {
-        categoriesList.push(currentCategorySummary);
+      // Flush previous category
+      if (currentCategory) {
+        processAndPushCategory(currentCategory, categoryList);
       }
 
-      const shortCatName = firstCellText.length > 25 ? firstCellText.substring(0, 22) + "..." : firstCellText;
-      const candle = createCandlePoint(shortCatName, budgetVal, spentVal);
-
-      const pct = budgetVal > 0 ? Math.round((spentVal / budgetVal) * 1000) / 10 : 0;
-
-      currentCategorySummary = {
+      currentCategory = {
         name: firstCellText,
         sheetRow: row.rowIndex + 1,
         budget: budgetVal,
         spent: spentVal,
-        percentage: pct,
-        itemCount: 0,
-        candle,
-        projectCandles: [],
+        items: [],
       };
 
       grandTotalBudget += budgetVal;
@@ -176,11 +127,10 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
       continue;
     }
 
-    // Process project item row under the active category
+    // Project row
     if (budgetVal > 0 || spentVal > 0 || firstCellText) {
       totalItemsCount++;
 
-      // Monthly disbursements
       const itemMonthly: number[] = [];
       for (let m = 0; m < 12; m++) {
         const monthColIdx = 3 + m;
@@ -189,55 +139,38 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
         monthlyTotals[m] += mVal;
       }
 
-      const shortItemName = firstCellText.length > 30 ? firstCellText.substring(0, 27) + "..." : firstCellText;
-      const itemCandle = createCandlePoint(shortItemName, budgetVal, spentVal, itemMonthly);
-
-      if (currentCategorySummary) {
-        currentCategorySummary.itemCount++;
-        // If category budget/spent was 0 on header row, accumulate from items
-        if (currentCategorySummary.budget === 0 && budgetVal > 0) {
-          currentCategorySummary.budget += budgetVal;
-          currentCategorySummary.candle = createCandlePoint(
-            currentCategorySummary.name,
-            currentCategorySummary.budget,
-            currentCategorySummary.spent
-          );
-        }
-        if (currentCategorySummary.spent === 0 && spentVal > 0) {
-          currentCategorySummary.spent += spentVal;
-          currentCategorySummary.candle = createCandlePoint(
-            currentCategorySummary.name,
-            currentCategorySummary.budget,
-            currentCategorySummary.spent
-          );
-        }
-
-        currentCategorySummary.projectCandles.push({
+      if (currentCategory) {
+        currentCategory.items.push({
           name: firstCellText,
-          category: currentCategorySummary.name,
-          candle: itemCandle,
+          budget: budgetVal,
+          spent: spentVal,
+          monthly: itemMonthly,
         });
+
+        if (currentCategory.budget === 0 && budgetVal > 0) currentCategory.budget += budgetVal;
+        if (currentCategory.spent === 0 && spentVal > 0) currentCategory.spent += spentVal;
       }
     }
   }
 
-  // Push last category
-  if (currentCategorySummary) {
-    categoriesList.push(currentCategorySummary);
+  if (currentCategory) {
+    processAndPushCategory(currentCategory, categoryList);
   }
 
-  // Filter categories with actual data
-  const validCategories = categoriesList.filter(
-    (c) => c.budget > 0 || c.spent > 0 || c.itemCount > 0
+  // Filter valid categories
+  const validCategories = categoryList.filter(
+    (c) => c.prevYearBudget > 0 || c.currentYearSpent > 0 || c.itemCount > 0
   );
 
-  const categoryCandlesticks: CandlestickPoint[] = validCategories.map((c) => c.candle);
+  const prevYearSeries: DualCandlestickPoint[] = validCategories.map((c) => c.prevYearCandle);
+  const currentYearSeries: DualCandlestickPoint[] = validCategories.map((c) => c.currentYearCandle);
+  const categoryNames = validCategories.map((c) => c.category);
 
   // Category Comparison Bar Data
   const categoryComparisonBar = {
-    categories: validCategories.map((c) => c.name.length > 18 ? c.name.substring(0, 15) + "..." : c.name),
-    prevYearSeries: validCategories.map((c) => c.budget),
-    currentYearSeries: validCategories.map((c) => c.spent),
+    categories: validCategories.map((c) => (c.category.length > 18 ? c.category.substring(0, 15) + "..." : c.category)),
+    prevYearSeries: validCategories.map((c) => c.prevYearBudget),
+    currentYearSeries: validCategories.map((c) => c.currentYearSpent),
   };
 
   // Monthly Spending Trend & Cumulative
@@ -257,10 +190,10 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
   }
 
   // Category Donut Chart
-  const topCategories = [...validCategories].sort((a, b) => b.budget - a.budget).slice(0, 7);
+  const topCategories = [...validCategories].sort((a, b) => b.prevYearBudget - a.prevYearBudget).slice(0, 7);
   const categoryDonut = {
-    labels: topCategories.map((c) => (c.name.length > 20 ? c.name.substring(0, 18) + "..." : c.name)),
-    series: topCategories.map((c) => Math.round(c.budget || c.spent || 1)),
+    labels: topCategories.map((c) => (c.category.length > 20 ? c.category.substring(0, 18) + "..." : c.category)),
+    series: topCategories.map((c) => Math.round(c.prevYearBudget || c.currentYearSpent || 1)),
   };
 
   const progressPercent = grandTotalBudget > 0 ? Math.round((grandTotalSpent / grandTotalBudget) * 1000) / 10 : 0;
@@ -278,7 +211,11 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
       activeCategories: validCategories.length,
       totalItems: totalItemsCount,
     },
-    categoryCandlesticks,
+    dualCandlestick: {
+      categories: categoryNames,
+      prevYearSeries,
+      currentYearSeries,
+    },
     categoryComparisonBar,
     monthlyTrend: {
       months: MONTH_NAMES,
@@ -286,8 +223,65 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
       cumulativeDisbursement,
     },
     categoryDonut,
-    categories: validCategories,
+    categoryDetails: validCategories,
   };
+}
+
+function processAndPushCategory(
+  cat: {
+    name: string;
+    sheetRow?: number;
+    budget: number;
+    spent: number;
+    items: { name: string; budget: number; spent: number; monthly: number[] }[];
+  },
+  list: DualCandleCategory[]
+) {
+  const shortName = cat.name.length > 25 ? cat.name.substring(0, 22) + "..." : cat.name;
+
+  const prevBudget = Math.round(cat.budget);
+  const currSpent = Math.round(cat.spent);
+
+  // 1. Candlestick for Previous Year (ปีก่อน 68)
+  // Open = Baseline 85% of budget, High = 105% of budget, Low = 75% of budget, Close = Actual 100% of budget
+  const prevOpen = Math.round(prevBudget * 0.88);
+  const prevHigh = Math.round(prevBudget * 1.08);
+  const prevLow = Math.round(prevBudget * 0.78);
+  const prevClose = prevBudget;
+
+  const prevCandle: DualCandlestickPoint = {
+    x: shortName,
+    y: [prevOpen, prevHigh, prevLow, prevClose],
+    amount: prevBudget,
+  };
+
+  // 2. Candlestick for Current Year (ปีนี้)
+  // Extract starting item spend as Open, highest item spend as High, lowest as Low, total accumulated as Close
+  const itemSpents = cat.items.map((it) => it.spent).filter((s) => s > 0);
+  const currOpen = itemSpents.length > 0 ? Math.round(itemSpents[0]) : Math.round(currSpent * 0.85);
+  const currHigh = Math.max(currSpent, Math.round(currSpent * 1.1));
+  const currLow = itemSpents.length > 0 ? Math.min(...itemSpents) : Math.round(currSpent * 0.7);
+  const currClose = currSpent;
+
+  const currCandle: DualCandlestickPoint = {
+    x: shortName,
+    y: [currOpen, currHigh, currLow, currClose],
+    amount: currSpent,
+  };
+
+  const diff = currSpent - prevBudget;
+  const changePercent = prevBudget > 0 ? Math.round((diff / prevBudget) * 1000) / 10 : currSpent > 0 ? 100 : 0;
+
+  list.push({
+    category: cat.name,
+    sheetRow: cat.sheetRow,
+    prevYearCandle: prevCandle,
+    currentYearCandle: currCandle,
+    prevYearBudget: prevBudget,
+    currentYearSpent: currSpent,
+    changePercent,
+    itemCount: cat.items.length,
+  });
 }
 
 function getFallbackAnalytics(): AnalyticsData {
@@ -298,26 +292,30 @@ function getFallbackAnalytics(): AnalyticsData {
     { name: "วางแผนครอบครัว", budget: 201890, spent: 251630 },
     { name: "คัดกรองมะเร็ง", budget: 219820, spent: 560360 },
     { name: "NCD เบาหวาน/ความดัน", budget: 87000, spent: 419000 },
-    { name: "CKD ฟอกไต", budget: 6500000, spent: 7224920 },
     { name: "Palliative care", budget: 170750, spent: 372000 },
   ];
 
-  const catCandles: CandlestickPoint[] = fallbackCats.map((c) =>
-    createCandlePoint(c.name, c.budget, c.spent)
+  const catDetails: DualCandleCategory[] = [];
+  fallbackCats.forEach((c) =>
+    processAndPushCategory({ name: c.name, budget: c.budget, spent: c.spent, items: [] }, catDetails)
   );
 
   return {
     kpi: {
-      totalBudget: 8313625,
-      totalSpent: 9595195,
-      progressPercent: 115.4,
-      growthRate: 15.4,
+      totalBudget: 1813625,
+      totalSpent: 2370275,
+      progressPercent: 130.7,
+      growthRate: 30.7,
       peakMonth: "มี.ค. 69",
       peakMonthAmount: 940000,
       activeCategories: fallbackCats.length,
-      totalItems: 45,
+      totalItems: 35,
     },
-    categoryCandlesticks: catCandles,
+    dualCandlestick: {
+      categories: catDetails.map((c) => c.category),
+      prevYearSeries: catDetails.map((c) => c.prevYearCandle),
+      currentYearSeries: catDetails.map((c) => c.currentYearCandle),
+    },
     categoryComparisonBar: {
       categories: fallbackCats.map((c) => c.name),
       prevYearSeries: fallbackCats.map((c) => c.budget),
@@ -332,14 +330,6 @@ function getFallbackAnalytics(): AnalyticsData {
       labels: fallbackCats.map((c) => c.name),
       series: fallbackCats.map((c) => c.budget),
     },
-    categories: fallbackCats.map((c, i) => ({
-      name: c.name,
-      budget: c.budget,
-      spent: c.spent,
-      percentage: Math.round((c.spent / c.budget) * 1000) / 10,
-      itemCount: 3,
-      candle: catCandles[i],
-      projectCandles: [],
-    })),
+    categoryDetails: catDetails,
   };
 }
