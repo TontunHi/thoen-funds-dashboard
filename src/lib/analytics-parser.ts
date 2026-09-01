@@ -2,7 +2,7 @@ import { ParsedSheetData } from "@/types/sheet";
 
 export interface DualCandlestickPoint {
   x: string;
-  y: [number, number, number, number]; // [Open, High, Low, Close]
+  y: [number, number, number, number];
   amount: number;
 }
 
@@ -72,6 +72,14 @@ function parseNumeric(val?: string): number {
   return isNaN(num) ? 0 : num;
 }
 
+// Ignore technical duplicate subtotal banners from the main category list
+const IGNORED_CATEGORY_NAMES = [
+  "รวมแยกรายเดือน(NHSO-MIS)",
+  "รวมจาก STM-DMIS",
+  "รวมสะสมตามช่วงเวลา",
+  "รวมสะสม",
+];
+
 export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData {
   const rows = sheetData.rows;
   if (!rows || rows.length <= 2) {
@@ -101,21 +109,35 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
 
     if (!firstCellText) continue;
 
-    const isMergedCategory =
-      (firstCell.colSpan >= 3 && firstCell.style.bold) ||
-      (firstCell.style.bold && !parseNumeric(firstCellText) && rawCells[1]?.formattedValue !== undefined);
-
+    // Check if this row is a Category Header
+    // 1. Any cell in the row is merged across 3+ columns (e.g. col F..Q banner like COPD / ปฐมภูมิ)
+    // 2. OR first cell is bold and not a pure number
+    // 3. OR row text is known category keyword (e.g. COPD, Palliative care, CKD, etc.)
+    const hasMergedSpan = rawCells.some((c) => c.colSpan >= 3);
     const budgetVal = parseNumeric(rawCells[1]?.formattedValue); // ผลงานปี 68
     const spentVal = parseNumeric(rawCells[2]?.formattedValue); // รวมสะสมปีนี้
 
-    if (isMergedCategory || (firstCell.style.bold && (budgetVal > 0 || spentVal > 0))) {
+    const isExplicitCategory =
+      hasMergedSpan ||
+      (firstCell.style.bold && !parseNumeric(firstCellText) && (budgetVal > 0 || spentVal > 0)) ||
+      firstCellText.toUpperCase().includes("COPD") ||
+      firstCellText.includes("Palliative care") ||
+      firstCellText === "CKD" ||
+      firstCellText === "ฟื้้นฟู";
+
+    if (isExplicitCategory && !IGNORED_CATEGORY_NAMES.includes(firstCellText)) {
       // Flush previous category
       if (currentCategory) {
         processAndPushCategory(currentCategory, categoryList);
       }
 
+      let displayCategoryName = firstCellText;
+      if (firstCellText.toUpperCase() === "COPD") {
+        displayCategoryName = "COPD (โรคปอดอุดกั้นและหอบหืด)";
+      }
+
       currentCategory = {
-        name: firstCellText,
+        name: displayCategoryName,
         sheetRow: row.rowIndex + 1,
         budget: budgetVal,
         spent: spentVal,
@@ -127,28 +149,31 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
       continue;
     }
 
-    // Project row
+    // Process Project Item row under the active category
     if (budgetVal > 0 || spentVal > 0 || firstCellText) {
-      totalItemsCount++;
+      // Ignore subtotal rows from monthly totals
+      if (!IGNORED_CATEGORY_NAMES.includes(firstCellText)) {
+        totalItemsCount++;
 
-      const itemMonthly: number[] = [];
-      for (let m = 0; m < 12; m++) {
-        const monthColIdx = 3 + m;
-        const mVal = parseNumeric(rawCells[monthColIdx]?.formattedValue);
-        itemMonthly.push(mVal);
-        monthlyTotals[m] += mVal;
-      }
+        const itemMonthly: number[] = [];
+        for (let m = 0; m < 12; m++) {
+          const monthColIdx = 3 + m;
+          const mVal = parseNumeric(rawCells[monthColIdx]?.formattedValue);
+          itemMonthly.push(mVal);
+          monthlyTotals[m] += mVal;
+        }
 
-      if (currentCategory) {
-        currentCategory.items.push({
-          name: firstCellText,
-          budget: budgetVal,
-          spent: spentVal,
-          monthly: itemMonthly,
-        });
+        if (currentCategory) {
+          currentCategory.items.push({
+            name: firstCellText,
+            budget: budgetVal,
+            spent: spentVal,
+            monthly: itemMonthly,
+          });
 
-        if (currentCategory.budget === 0 && budgetVal > 0) currentCategory.budget += budgetVal;
-        if (currentCategory.spent === 0 && spentVal > 0) currentCategory.spent += spentVal;
+          if (currentCategory.budget === 0 && budgetVal > 0) currentCategory.budget += budgetVal;
+          if (currentCategory.spent === 0 && spentVal > 0) currentCategory.spent += spentVal;
+        }
       }
     }
   }
@@ -157,7 +182,7 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
     processAndPushCategory(currentCategory, categoryList);
   }
 
-  // Filter valid categories
+  // Filter valid categories (has budget or spent or items)
   const validCategories = categoryList.filter(
     (c) => c.prevYearBudget > 0 || c.currentYearSpent > 0 || c.itemCount > 0
   );
@@ -168,7 +193,7 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
 
   // Category Comparison Bar Data
   const categoryComparisonBar = {
-    categories: validCategories.map((c) => (c.category.length > 18 ? c.category.substring(0, 15) + "..." : c.category)),
+    categories: validCategories.map((c) => (c.category.length > 22 ? c.category.substring(0, 19) + "..." : c.category)),
     prevYearSeries: validCategories.map((c) => c.prevYearBudget),
     currentYearSeries: validCategories.map((c) => c.currentYearSpent),
   };
@@ -190,7 +215,7 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
   }
 
   // Category Donut Chart
-  const topCategories = [...validCategories].sort((a, b) => b.prevYearBudget - a.prevYearBudget).slice(0, 7);
+  const topCategories = [...validCategories].sort((a, b) => b.prevYearBudget - a.prevYearBudget).slice(0, 8);
   const categoryDonut = {
     labels: topCategories.map((c) => (c.category.length > 20 ? c.category.substring(0, 18) + "..." : c.category)),
     series: topCategories.map((c) => Math.round(c.prevYearBudget || c.currentYearSpent || 1)),
@@ -242,8 +267,6 @@ function processAndPushCategory(
   const prevBudget = Math.round(cat.budget);
   const currSpent = Math.round(cat.spent);
 
-  // 1. Candlestick for Previous Year (ปีก่อน 68)
-  // Open = Baseline 85% of budget, High = 105% of budget, Low = 75% of budget, Close = Actual 100% of budget
   const prevOpen = Math.round(prevBudget * 0.88);
   const prevHigh = Math.round(prevBudget * 1.08);
   const prevLow = Math.round(prevBudget * 0.78);
@@ -255,8 +278,6 @@ function processAndPushCategory(
     amount: prevBudget,
   };
 
-  // 2. Candlestick for Current Year (ปีนี้)
-  // Extract starting item spend as Open, highest item spend as High, lowest as Low, total accumulated as Close
   const itemSpents = cat.items.map((it) => it.spent).filter((s) => s > 0);
   const currOpen = itemSpents.length > 0 ? Math.round(itemSpents[0]) : Math.round(currSpent * 0.85);
   const currHigh = Math.max(currSpent, Math.round(currSpent * 1.1));
@@ -292,7 +313,9 @@ function getFallbackAnalytics(): AnalyticsData {
     { name: "วางแผนครอบครัว", budget: 201890, spent: 251630 },
     { name: "คัดกรองมะเร็ง", budget: 219820, spent: 560360 },
     { name: "NCD เบาหวาน/ความดัน", budget: 87000, spent: 419000 },
+    { name: "CKD ฟอกไต", budget: 6500000, spent: 7224920 },
     { name: "Palliative care", budget: 170750, spent: 372000 },
+    { name: "COPD (โรคปอดอุดกั้นและหอบหืด)", budget: 78084, spent: 0 },
   ];
 
   const catDetails: DualCandleCategory[] = [];
@@ -302,14 +325,14 @@ function getFallbackAnalytics(): AnalyticsData {
 
   return {
     kpi: {
-      totalBudget: 1813625,
+      totalBudget: 1891709,
       totalSpent: 2370275,
-      progressPercent: 130.7,
-      growthRate: 30.7,
+      progressPercent: 125.3,
+      growthRate: 25.3,
       peakMonth: "มี.ค. 69",
       peakMonthAmount: 940000,
       activeCategories: fallbackCats.length,
-      totalItems: 35,
+      totalItems: 36,
     },
     dualCandlestick: {
       categories: catDetails.map((c) => c.category),
