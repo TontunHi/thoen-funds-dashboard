@@ -17,6 +17,20 @@ export interface DualCandleCategory {
   sheetRow?: number;
 }
 
+export interface MonthlyItemContribution {
+  name: string;
+  category: string;
+  amount: number;
+  sheetRow?: number;
+}
+
+export interface MonthlyBreakdown {
+  monthIndex: number;
+  monthName: string;
+  totalAmount: number;
+  items: MonthlyItemContribution[];
+}
+
 export interface AnalyticsData {
   kpi: {
     totalBudget: number;
@@ -42,6 +56,7 @@ export interface AnalyticsData {
     months: string[];
     monthlyDisbursement: number[];
     cumulativeDisbursement: number[];
+    breakdowns: MonthlyBreakdown[];
   };
   categoryDonut: {
     labels: string[];
@@ -72,7 +87,6 @@ function parseNumeric(val?: string): number {
   return isNaN(num) ? 0 : num;
 }
 
-// Ignore technical duplicate subtotal banners from the main category list
 const IGNORED_CATEGORY_NAMES = [
   "รวมแยกรายเดือน(NHSO-MIS)",
   "รวมจาก STM-DMIS",
@@ -98,6 +112,13 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
   } | null = null;
 
   const monthlyTotals: number[] = new Array(12).fill(0);
+  const monthlyBreakdowns: MonthlyBreakdown[] = MONTH_NAMES.map((name, idx) => ({
+    monthIndex: idx,
+    monthName: name,
+    totalAmount: 0,
+    items: [],
+  }));
+
   let grandTotalBudget = 0;
   let grandTotalSpent = 0;
   let totalItemsCount = 0;
@@ -109,13 +130,9 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
 
     if (!firstCellText) continue;
 
-    // Check if this row is a Category Header
-    // 1. Any cell in the row is merged across 3+ columns (e.g. col F..Q banner like COPD / ปฐมภูมิ)
-    // 2. OR first cell is bold and not a pure number
-    // 3. OR row text is known category keyword (e.g. COPD, Palliative care, CKD, etc.)
     const hasMergedSpan = rawCells.some((c) => c.colSpan >= 3);
-    const budgetVal = parseNumeric(rawCells[1]?.formattedValue); // ผลงานปี 68
-    const spentVal = parseNumeric(rawCells[2]?.formattedValue); // รวมสะสมปีนี้
+    const budgetVal = parseNumeric(rawCells[1]?.formattedValue);
+    const spentVal = parseNumeric(rawCells[2]?.formattedValue);
 
     const isExplicitCategory =
       hasMergedSpan ||
@@ -126,7 +143,6 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
       firstCellText === "ฟื้้นฟู";
 
     if (isExplicitCategory && !IGNORED_CATEGORY_NAMES.includes(firstCellText)) {
-      // Flush previous category
       if (currentCategory) {
         processAndPushCategory(currentCategory, categoryList);
       }
@@ -149,9 +165,8 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
       continue;
     }
 
-    // Process Project Item row under the active category
+    // Project Item row
     if (budgetVal > 0 || spentVal > 0 || firstCellText) {
-      // Ignore subtotal rows from monthly totals
       if (!IGNORED_CATEGORY_NAMES.includes(firstCellText)) {
         totalItemsCount++;
 
@@ -161,6 +176,15 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
           const mVal = parseNumeric(rawCells[monthColIdx]?.formattedValue);
           itemMonthly.push(mVal);
           monthlyTotals[m] += mVal;
+
+          if (mVal > 0) {
+            monthlyBreakdowns[m].items.push({
+              name: firstCellText,
+              category: currentCategory ? currentCategory.name : "ทั่วไป",
+              amount: mVal,
+              sheetRow: row.rowIndex + 1,
+            });
+          }
         }
 
         if (currentCategory) {
@@ -182,7 +206,12 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
     processAndPushCategory(currentCategory, categoryList);
   }
 
-  // Filter valid categories (has budget or spent or items)
+  // Populate total amounts in breakdowns and sort descending
+  monthlyBreakdowns.forEach((mb, idx) => {
+    mb.totalAmount = monthlyTotals[idx];
+    mb.items.sort((a, b) => b.amount - a.amount);
+  });
+
   const validCategories = categoryList.filter(
     (c) => c.prevYearBudget > 0 || c.currentYearSpent > 0 || c.itemCount > 0
   );
@@ -191,14 +220,12 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
   const currentYearSeries: DualCandlestickPoint[] = validCategories.map((c) => c.currentYearCandle);
   const categoryNames = validCategories.map((c) => c.category);
 
-  // Category Comparison Bar Data
   const categoryComparisonBar = {
     categories: validCategories.map((c) => (c.category.length > 22 ? c.category.substring(0, 19) + "..." : c.category)),
     prevYearSeries: validCategories.map((c) => c.prevYearBudget),
     currentYearSeries: validCategories.map((c) => c.currentYearSpent),
   };
 
-  // Monthly Spending Trend & Cumulative
   let runningSum = 0;
   let peakMonth = MONTH_NAMES[0];
   let peakMonthAmount = 0;
@@ -214,7 +241,6 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
     cumulativeDisbursement.push(runningSum);
   }
 
-  // Category Donut Chart
   const topCategories = [...validCategories].sort((a, b) => b.prevYearBudget - a.prevYearBudget).slice(0, 8);
   const categoryDonut = {
     labels: topCategories.map((c) => (c.category.length > 20 ? c.category.substring(0, 18) + "..." : c.category)),
@@ -246,6 +272,7 @@ export function computeAnalyticsData(sheetData: ParsedSheetData): AnalyticsData 
       months: MONTH_NAMES,
       monthlyDisbursement: monthlyTotals,
       cumulativeDisbursement,
+      breakdowns: monthlyBreakdowns,
     },
     categoryDonut,
     categoryDetails: validCategories,
@@ -348,6 +375,12 @@ function getFallbackAnalytics(): AnalyticsData {
       months: MONTH_NAMES,
       monthlyDisbursement: [450000, 510000, 625000, 485000, 740000, 980000, 695000, 705000, 815000, 590000, 470000, 350000],
       cumulativeDisbursement: [450000, 960000, 1585000, 2070000, 2810000, 3790000, 4485000, 5190000, 6005000, 6595000, 7065000, 7415000],
+      breakdowns: MONTH_NAMES.map((name, i) => ({
+        monthIndex: i,
+        monthName: name,
+        totalAmount: 450000,
+        items: [],
+      })),
     },
     categoryDonut: {
       labels: fallbackCats.map((c) => c.name),

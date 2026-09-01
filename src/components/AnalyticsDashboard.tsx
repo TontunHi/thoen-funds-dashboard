@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ParsedSheetData, SheetApiResponse } from "@/types/sheet";
 import { SHEET_CONFIG } from "@/config/sheet.config";
-import { computeAnalyticsData, AnalyticsData } from "@/lib/analytics-parser";
+import { computeAnalyticsData, AnalyticsData, MonthlyBreakdown } from "@/lib/analytics-parser";
 import {
   RefreshCw,
   ExternalLink,
@@ -25,6 +25,9 @@ import {
   CheckSquare,
   Square,
   HelpCircle,
+  Search,
+  ChevronRight,
+  X,
 } from "lucide-react";
 
 // Dynamically import react-apexcharts to prevent SSR window reference error
@@ -43,6 +46,8 @@ export default function AnalyticsDashboard() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [showEquationModal, setShowEquationModal] = useState<boolean>(false);
+  const [selectedMonthModal, setSelectedMonthModal] = useState<MonthlyBreakdown | null>(null);
+  const [searchTerm, setSearchTerm] = useState<string>("");
   const isInitializedRef = useRef<boolean>(false);
 
   const fetchData = useCallback(async (manual = false) => {
@@ -103,7 +108,7 @@ export default function AnalyticsDashboard() {
     }).format(val);
   };
 
-  // 1. Filtered Side-by-Side Comparison Bar Chart based on Selected Categories
+  // 1. Filtered Side-by-Side Comparison Bar Chart
   const filteredCategoryDetails = useMemo(() => {
     if (!analytics) return [];
     return analytics.categoryDetails.filter((c) => selectedCategories.includes(c.category));
@@ -255,12 +260,12 @@ export default function AnalyticsDashboard() {
     },
   };
 
-  // 2. Monthly Spending Trend Options & Series
+  // 2. Monthly Spending Trend Options & Series with Interactive Click Event
   const trendSeries = useMemo(() => {
     if (!analytics) return [];
     return [
       {
-        name: "ยอดเบิกจ่ายประจำเดือน",
+        name: "ยอดเบิกจ่ายประจำเดือน (คลิกเพื่อดูแจกแจง)",
         type: "column",
         data: analytics.monthlyTrend.monthlyDisbursement,
       },
@@ -278,6 +283,15 @@ export default function AnalyticsDashboard() {
       type: "line",
       fontFamily: "var(--font-prompt), sans-serif",
       toolbar: { show: false },
+      events: {
+        dataPointSelection: (_event, _chartContext, config) => {
+          const monthIdx = config?.dataPointIndex;
+          if (typeof monthIdx === "number" && analytics && analytics.monthlyTrend.breakdowns[monthIdx]) {
+            setSelectedMonthModal(analytics.monthlyTrend.breakdowns[monthIdx]);
+            setSearchTerm("");
+          }
+        },
+      },
     },
     stroke: {
       width: [0, 3],
@@ -329,7 +343,7 @@ export default function AnalyticsDashboard() {
       shared: true,
       intersect: false,
       y: {
-        formatter: (y) => (typeof y !== "undefined" ? `${formatCurrency(y)} บาท` : y),
+        formatter: (y) => (typeof y !== "undefined" ? `${formatCurrency(y)} บาท (คลิกแท่งเพื่อดูรายการ)` : y),
       },
     },
     grid: {
@@ -373,6 +387,16 @@ export default function AnalyticsDashboard() {
       },
     },
   };
+
+  // Filtered items in monthly drilldown modal
+  const modalFilteredItems = useMemo(() => {
+    if (!selectedMonthModal) return [];
+    if (!searchTerm.trim()) return selectedMonthModal.items;
+    const term = searchTerm.toLowerCase();
+    return selectedMonthModal.items.filter(
+      (it) => it.name.toLowerCase().includes(term) || it.category.toLowerCase().includes(term)
+    );
+  }, [selectedMonthModal, searchTerm]);
 
   return (
     <div className="w-full min-h-screen bg-slate-50 text-slate-800 pb-24 font-prompt selection:bg-blue-100 selection:text-blue-900">
@@ -423,7 +447,7 @@ export default function AnalyticsDashboard() {
             <button
               onClick={() => fetchData(true)}
               disabled={isLoading || isRefreshing}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 active:bg-slate-100 border border-slate-300 rounded-lg shadow-2xs transition disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 active:bg-slate-100 border border-slate-300 rounded-lg shadow-2xs transition disabled:opacity-50 cursor-pointer"
               title="รีเฟรชข้อมูล"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-slate-600 ${isRefreshing ? "animate-spin text-blue-600" : ""}`} />
@@ -621,11 +645,11 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* 3. Grid Row: Monthly Spending Trend & Category Allocation */}
+        {/* 3. Grid Row: Monthly Spending Trend with Drilldown & Category Allocation */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Trend Chart (2 Cols) */}
-          <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm">
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+          <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm space-y-3">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-blue-50 text-blue-700 rounded-lg">
                   <BarChart3 className="w-5 h-5" />
@@ -635,7 +659,7 @@ export default function AnalyticsDashboard() {
                     แนวโน้มการเบิกจ่ายรายเดือนและยอดสะสม
                   </h2>
                   <p className="text-xs text-slate-500">
-                    ยอดเบิกจ่ายแต่ละเดือน (แท่งสีฟ้า) กับยอดสะสมรวม (เส้นสีเขียว)
+                    💡 คลิกที่แท่งกราฟประจำเดือน หรือปุ่มด้านล่างเพื่อเจาะลึกดูรายการในแท่งนั้น
                   </p>
                 </div>
               </div>
@@ -648,11 +672,36 @@ export default function AnalyticsDashboard() {
                 title="ดูที่มาของข้อมูลและสมการคำนวณ"
               >
                 <HelpCircle className="w-3.5 h-3.5" />
-                <span>ที่มาข้อมูล & สมการ</span>
+                <span>ที่มา & สมการ</span>
               </button>
             </div>
+
+            {/* Quick Month Filter Buttons */}
+            {analytics && (
+              <div className="flex items-center flex-wrap gap-1.5 pt-1">
+                <span className="text-xs font-medium text-slate-500 mr-1">เจาะลึกเดือน:</span>
+                {analytics.monthlyTrend.breakdowns.map((mb, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setSelectedMonthModal(mb);
+                      setSearchTerm("");
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition border cursor-pointer ${
+                      mb.totalAmount > 0
+                        ? "bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border-slate-200 hover:border-blue-200"
+                        : "bg-slate-50/50 text-slate-400 border-slate-100"
+                    }`}
+                  >
+                    {mb.monthName}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="w-full pt-2">
-              <Chart options={trendOptions} series={trendSeries} type="line" height={350} />
+              <Chart options={trendOptions} series={trendSeries} type="line" height={340} />
             </div>
           </div>
 
@@ -674,70 +723,114 @@ export default function AnalyticsDashboard() {
             </div>
           </div>
         </div>
+      </main>
 
-        {/* 4. Category Execution Progress Table (เรียงตาม Sheet และไม่มีบอกเลขแถว) */}
-        {analytics && analytics.categoryDetails.length > 0 && (
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">
-                  ตารางเปรียบเทียบผลงานรายหมวดหมู่กองทุน (Year-over-Year Summary)
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  เรียงตามลำดับโครงสร้างหมวดหมู่ใน Google Sheet
-                </p>
+      {/* Monthly Item Drilldown Modal */}
+      {selectedMonthModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-3xl w-full max-h-[85vh] flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-50 text-blue-700 rounded-xl border border-blue-200">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    รายการเบิกจ่ายประจำเดือน: <span className="text-blue-700">{selectedMonthModal.monthName}</span>
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    ยอดรวมทั้งเดือน: <strong className="text-slate-900 font-mono">{formatCurrency(selectedMonthModal.totalAmount)} ฿</strong> ({selectedMonthModal.items.length} รายการ)
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedMonthModal(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-lg transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search Filter Box */}
+            <div className="px-6 py-3 border-b border-slate-100 bg-white">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="ค้นหาชื่อโครงการ หรือชื่อหมวดหมู่..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 hover:bg-slate-100/80 focus:bg-white text-xs sm:text-sm text-slate-800 border border-slate-200 rounded-xl focus:outline-hidden focus:border-blue-400 transition"
+                />
               </div>
             </div>
 
-            <div className="w-full overflow-x-auto">
-              <table className="w-full text-xs sm:text-sm text-left">
-                <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                  <tr>
-                    <th className="py-3 px-4">ชื่อหมวดหมู่กองทุน</th>
-                    <th className="py-3 px-4 text-center">จำนวนโครงการ</th>
-                    <th className="py-3 px-4 text-right">ผลงานปีก่อน 68 (บาท)</th>
-                    <th className="py-3 px-4 text-right">สะสมปีนี้ (บาท)</th>
-                    <th className="py-3 px-4 text-center">เทียบปีก่อน</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {analytics.categoryDetails.map((cat, idx) => {
-                    const isGrowth = cat.currentYearSpent >= cat.prevYearBudget;
+            {/* Modal Items List */}
+            <div className="p-6 overflow-y-auto space-y-2 flex-1 divide-y divide-slate-100">
+              {modalFilteredItems.length > 0 ? (
+                modalFilteredItems.map((item, idx) => {
+                  const pctOfMonth = selectedMonthModal.totalAmount > 0
+                    ? Math.round((item.amount / selectedMonthModal.totalAmount) * 1000) / 10
+                    : 0;
 
-                    return (
-                      <tr key={idx} className="hover:bg-slate-50/60 transition">
-                        <td className="py-3.5 px-4 font-medium text-slate-900">
-                          {cat.category}
-                        </td>
-                        <td className="py-3.5 px-4 text-center text-slate-600 font-mono">
-                          {cat.itemCount}
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-mono font-medium text-slate-800">
-                          {formatCurrency(cat.prevYearBudget)} ฿
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-mono font-medium text-slate-900">
-                          {formatCurrency(cat.currentYearSpent)} ฿
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                              isGrowth
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : "bg-rose-50 text-rose-700 border border-rose-200"
-                            }`}
-                          >
-                            {isGrowth ? "+" : ""}{cat.changePercent}%
+                  return (
+                    <div
+                      key={idx}
+                      className="pt-2.5 pb-2.5 first:pt-0 flex items-center justify-between gap-4 hover:bg-slate-50/80 px-2 rounded-lg transition"
+                    >
+                      <div className="space-y-0.5 flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-slate-900 truncate">
+                            {item.name}
                           </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md font-medium text-2xs">
+                            {item.category}
+                          </span>
+                          {item.sheetRow && <span>แถวใน Sheet: {item.sheetRow}</span>}
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <div className="font-mono font-bold text-sm text-slate-900">
+                          {formatCurrency(item.amount)} ฿
+                        </div>
+                        <div className="text-2xs text-slate-400 font-mono">
+                          {pctOfMonth}% ของเดือน
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="py-12 text-center text-slate-400 text-xs">
+                  {selectedMonthModal.items.length === 0
+                    ? "ไม่มีรายการเบิกจ่ายในเดือนนี้"
+                    : "ไม่พบรายการที่ตรงกับคำค้นหา"}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 border-t border-slate-100 bg-slate-50/80 flex items-center justify-between text-xs">
+              <span className="text-slate-500">
+                แสดง {modalFilteredItems.length} จาก {selectedMonthModal.items.length} รายการ
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedMonthModal(null)}
+                className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-medium transition cursor-pointer"
+              >
+                ปิด
+              </button>
             </div>
           </div>
-        )}
-      </main>
+        </div>
+      )}
 
       {/* Equation & Data Source Explanation Modal */}
       {showEquationModal && (
